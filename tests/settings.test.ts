@@ -3,10 +3,10 @@ import { openRouterModels } from '../src/models.ts';
 import { readSettings } from '../src/settings.ts';
 
 test('settings come from the environment, with defaults for owner, port and data folder', () => {
-  expect(readSettings({})).toEqual({ owner: 'Owner', port: 4000, dataDir: './data', peerTasksPerHour: 20, primaryModel: undefined, backupModel: undefined, apiKey: undefined, demo: false, limits: { retries: 2, retryWaitMs: 2000, taskTimeLimitMs: 60_000, heartbeatMs: 5000, heartbeatMissedMs: 20_000, maxModelCalls: 2, maxOutputTokens: 2000 } });
+  expect(readSettings({})).toEqual({ owner: 'Owner', port: 4000, dataDir: './data', peerTasksPerHour: 20, peerAllowLocal: false, primaryModel: undefined, backupModel: undefined, apiKey: undefined, demo: false, limits: { retries: 2, retryWaitMs: 2000, taskTimeLimitMs: 60_000, heartbeatMs: 5000, heartbeatMissedMs: 20_000, maxModelCalls: 2, maxOutputTokens: 2000 } });
   expect(
     readSettings({ TULOY_OWNER: 'Lou', TULOY_PORT: '4100', TULOY_DATA_DIR: '/tmp/lou', TULOY_PEER_TASKS_PER_HOUR: '5', TULOY_PRIMARY_MODEL: 'vendor-a/model-1', TULOY_BACKUP_MODEL: 'vendor-b/model-2', OPENROUTER_API_KEY: 'test-key', TULOY_RETRIES: '1', TULOY_RETRY_WAIT_MS: '500', TULOY_TASK_TIME_LIMIT_MS: '9000', TULOY_HEARTBEAT_MS: '1000', TULOY_HEARTBEAT_MISSED_MS: '3000', TULOY_MAX_MODEL_CALLS: '4', TULOY_MAX_OUTPUT_TOKENS: '800' }),
-  ).toEqual({ owner: 'Lou', port: 4100, dataDir: '/tmp/lou', peerTasksPerHour: 5, primaryModel: 'vendor-a/model-1', backupModel: 'vendor-b/model-2', apiKey: 'test-key', demo: false, limits: { retries: 1, retryWaitMs: 500, taskTimeLimitMs: 9000, heartbeatMs: 1000, heartbeatMissedMs: 3000, maxModelCalls: 4, maxOutputTokens: 800 } });
+  ).toEqual({ owner: 'Lou', port: 4100, dataDir: '/tmp/lou', peerTasksPerHour: 5, peerAllowLocal: false, primaryModel: 'vendor-a/model-1', backupModel: 'vendor-b/model-2', apiKey: 'test-key', demo: false, limits: { retries: 1, retryWaitMs: 500, taskTimeLimitMs: 9000, heartbeatMs: 1000, heartbeatMissedMs: 3000, maxModelCalls: 4, maxOutputTokens: 800 } });
 });
 
 test('the primary and backup models are the model IDs of the settings', () => {

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { systemClock } from './clock.ts';
 import { createConductor } from './conductor.ts';
 import { openRouterModels } from './models.ts';
+import { createPeerClient } from './peer-client.ts';
 import { createServer } from './server.ts';
 import { readSettings } from './settings.ts';
 import { openStore } from './store.ts';
@@ -17,7 +18,7 @@ try {
 }
 mkdirSync(settings.dataDir, { recursive: true });
 const store = openStore(join(settings.dataDir, 'tuloy.sqlite'), systemClock);
-const conductor = createConductor({ store, models, clock: systemClock, limits: settings.limits });
+const conductor = createConductor({ store, models, clock: systemClock, limits: settings.limits, peerClient: createPeerClient({ allowLocal: settings.peerAllowLocal }) });
 // Runs that were not finished at the last stop continue now, with no action from the owner.
 conductor.continueRuns();
 // ponytail: loopback only, there is no login for the page and its API. The A2A endpoint takes work only with a key from the allowed list.

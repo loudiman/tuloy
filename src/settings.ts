@@ -8,6 +8,8 @@ export function readSettings(env: Record<string, string | undefined>) {
     primaryModel: env.TULOY_PRIMARY_MODEL || undefined,
     backupModel: env.TULOY_BACKUP_MODEL || undefined,
     apiKey: env.OPENROUTER_API_KEY || undefined,
+    /** Permits plain-http addresses of peers on this same machine (two Tuloys on one laptop). Off by default; no effect in production. */
+    peerAllowLocal: env.TULOY_PEER_ALLOW_LOCAL === '1' && env.NODE_ENV !== 'production',
     /** Demo mode. Injection exists only in demo mode. */
     demo: env.TULOY_DEMO === '1',
     limits: {
