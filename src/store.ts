@@ -71,6 +71,7 @@ export function openStore(file: string, clock: { now(): number }) {
       cause TEXT NOT NULL, action TEXT NOT NULL, result TEXT NOT NULL, data TEXT);
     CREATE TABLE IF NOT EXISTS injections (id INTEGER PRIMARY KEY AUTOINCREMENT, task TEXT NOT NULL, kind TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS peers (name TEXT PRIMARY KEY, address TEXT NOT NULL, send_key TEXT NOT NULL, accept_key TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS invites (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, used_at INTEGER);
   `);
   // A data file from before the peer server has no such columns.
   for (const column of ['runs ADD COLUMN for_peer TEXT', 'tasks ADD COLUMN input TEXT']) {
@@ -168,6 +169,10 @@ export function openStore(file: string, clock: { now(): number }) {
     addPeer(peer: Peer) {
       db.prepare('INSERT OR REPLACE INTO peers (name, address, send_key, accept_key) VALUES (?, ?, ?, ?)').run(peer.name, peer.address, peer.sendKey, peer.acceptKey);
     },
+    /** Takes a peer off the allowed list. False when there was no such peer. */
+    removePeer(name: string): boolean {
+      return db.prepare('DELETE FROM peers WHERE name = ?').run(name).changes === 1;
+    },
     /** The allowed list. */
     peers(): Peer[] {
       return db.prepare('SELECT * FROM peers ORDER BY name').all().map((r: Row) => ({ name: r.name, address: r.address, sendKey: r.send_key, acceptKey: r.accept_key }));
@@ -175,6 +180,18 @@ export function openStore(file: string, clock: { now(): number }) {
     /** How many runs this Tuloy started for the peer in the last hour. */
     peerRunsInLastHour(name: string): number {
       return Number(db.prepare('SELECT COUNT(*) AS n FROM runs WHERE for_peer = ? AND started_at > ?').get(name, clock.now() - 60 * 60 * 1000)!.n);
+    },
+    /** Saves an open invite. Only the hash of its token is stored. It stops working after 24 hours. */
+    createInvite(tokenHash: string) {
+      db.prepare('INSERT INTO invites (token_hash, expires_at) VALUES (?, ?)').run(tokenHash, clock.now() + 24 * 60 * 60 * 1000);
+    },
+    /** True when there is such an invite, it is not used and it is not older than 24 hours. */
+    inviteIsOpen(tokenHash: string): boolean {
+      return !!db.prepare('SELECT 1 FROM invites WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?').get(tokenHash, clock.now());
+    },
+    /** Uses up an open invite. False when it was not open: an invite works one time. */
+    useInvite(tokenHash: string): boolean {
+      return db.prepare('UPDATE invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?').run(clock.now(), tokenHash, clock.now()).changes === 1;
     },
     close() {
       db.close();
