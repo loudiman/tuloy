@@ -1,35 +1,30 @@
 import { expect, test } from 'vitest';
 import { headerOf, shownStatus, timelineOf } from '../src/page/view.ts';
 
-test('the status of a task is one of the seven plain words', () => {
-  const word = (status: string, runStatus = 'running') => shownStatus({ status }, runStatus);
+// Review fix 12: the server's `shownStatus` is the only source of the status word.
+test('the status word of a task is the word that the server sends', () => {
+  const word = (status: string, shown: string) => shownStatus({ status, shownStatus: shown }, 'running');
 
-  expect(word('queued')).toBe('queued');
-  expect(word('waiting_on_dependency')).toBe('waiting on dependency');
-  expect(word('running')).toBe('running');
-  expect(word('stalled_timeout')).toBe('stalled');
-  expect(word('stalled_heartbeat')).toBe('stalled');
-  expect(word('failed_validation')).toBe('recovering');
-  expect(word('rejected')).toBe('recovering');
-  expect(word('model_unavailable')).toBe('recovering');
-  expect(word('recovering')).toBe('recovering');
-  expect(word('done')).toBe('done');
-  expect(word('escalated')).toBe('escalated');
+  expect(word('running', 'recovering')).toBe('recovering');
+  // The three stored statuses for which the page had a second answer ("recovering") show the server's word.
+  expect(word('failed_validation', 'stalled')).toBe('stalled');
+  expect(word('rejected', 'stalled')).toBe('stalled');
+  expect(word('model_unavailable', 'stalled')).toBe('stalled');
+  expect(word('waiting_on_dependency', 'waiting on dependency')).toBe('waiting on dependency');
 });
 
-test('the status word that the server sends wins over the stored status', () => {
-  expect(shownStatus({ status: 'running', shownStatus: 'recovering' }, 'running')).toBe('recovering');
+test('with no word from the server, the page shows the stored status as it is: it has no mapping of its own', () => {
+  for (const status of ['queued', 'waiting_on_dependency', 'stalled_timeout', 'failed_validation', 'rejected', 'model_unavailable', 'sent_to_peer']) {
+    expect(shownStatus({ status }, 'running')).toBe(status);
+    expect(shownStatus({ status, shownStatus: null }, 'escalated')).toBe(status);
+  }
 });
 
 test('in an escalated run, the task that could not finish is escalated, and a task that never started keeps its word', () => {
-  expect(shownStatus({ status: 'rejected' }, 'escalated')).toBe('escalated');
-  expect(shownStatus({ status: 'model_unavailable' }, 'escalated')).toBe('escalated');
-  expect(shownStatus({ status: 'waiting_on_dependency' }, 'escalated')).toBe('waiting on dependency');
-  expect(shownStatus({ status: 'done' }, 'escalated')).toBe('done');
-});
-
-test('a status word that the page does not know is shown as it is, with spaces', () => {
-  expect(shownStatus({ status: 'sent_to_peer' }, 'running')).toBe('sent to peer');
+  expect(shownStatus({ status: 'rejected', shownStatus: 'stalled' }, 'escalated')).toBe('escalated');
+  expect(shownStatus({ status: 'model_unavailable', shownStatus: 'stalled' }, 'escalated')).toBe('escalated');
+  expect(shownStatus({ status: 'waiting_on_dependency', shownStatus: 'waiting on dependency' }, 'escalated')).toBe('waiting on dependency');
+  expect(shownStatus({ status: 'done', shownStatus: 'done' }, 'escalated')).toBe('done');
 });
 
 const startedAt = Date.parse('2026-11-12T09:00:00+08:00');
@@ -37,7 +32,7 @@ const task = (id: string, status: string, more: object = {}) => ({ id, title: `T
 
 test('the header of a running run: start in Manila time, time passed until now, tasks done of total, no stuck task', () => {
   const run = { id: 1, goal: 'A goal', status: 'running', startedAt, endedAt: null };
-  const tasks = [task('a', 'done'), task('b', 'running'), task('c', 'waiting_on_dependency')];
+  const tasks = [task('a', 'done'), task('b', 'running'), task('c', 'waiting_on_dependency', { shownStatus: 'waiting on dependency' })];
 
   expect(headerOf(run, tasks, startedAt + 75_000)).toEqual({ started: '12 Nov 2026, 09:00:00', passed: '00:01:15', done: 1, total: 3, stuck: null });
 });
@@ -52,9 +47,9 @@ test('the header names the task that is stuck now: stalled, recovering, or the o
   const running = { id: 1, goal: 'A goal', status: 'running', startedAt, endedAt: null };
   const escalated = { ...running, status: 'escalated', endedAt: startedAt + 1000 };
 
-  expect(headerOf(running, [task('a', 'done'), task('b', 'stalled_timeout'), task('c', 'queued')], startedAt).stuck?.id).toBe('b');
+  expect(headerOf(running, [task('a', 'done'), task('b', 'stalled_timeout', { shownStatus: 'stalled' }), task('c', 'queued')], startedAt).stuck?.id).toBe('b');
   expect(headerOf(running, [task('a', 'running', { shownStatus: 'recovering' })], startedAt).stuck?.id).toBe('a');
-  expect(headerOf(escalated, [task('a', 'done'), task('b', 'rejected'), task('c', 'waiting_on_dependency')], startedAt).stuck?.id).toBe('b');
+  expect(headerOf(escalated, [task('a', 'done'), task('b', 'rejected', { shownStatus: 'stalled' }), task('c', 'waiting_on_dependency')], startedAt).stuck?.id).toBe('b');
   expect(headerOf({ ...running, status: 'done' }, [task('a', 'done')], startedAt).stuck).toBeNull();
 });
 

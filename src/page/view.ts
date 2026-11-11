@@ -1,28 +1,15 @@
 /**
  * The pure part of the dashboard: what the page shows, worked out from the run, the task rows and the event log.
  * The server sends this file to the browser with its types removed, and the tests import it directly.
- * Every field that a later ticket adds (shownStatus, stuckReason, forPeer) is optional here: a missing field shows nothing.
+ * The fields stuckReason and forPeer are optional here: a missing field shows nothing.
  */
 
-export type ShownStatus = 'queued' | 'waiting on dependency' | 'running' | 'stalled' | 'recovering' | 'done' | 'escalated';
-
-const shownWords: Record<string, ShownStatus> = {
-  queued: 'queued',
-  waiting_on_dependency: 'waiting on dependency',
-  running: 'running',
-  stalled_timeout: 'stalled',
-  stalled_heartbeat: 'stalled',
-  failed_validation: 'recovering',
-  rejected: 'recovering',
-  model_unavailable: 'recovering',
-  recovering: 'recovering',
-  done: 'done',
-  escalated: 'escalated',
-};
-
-/** The plain status word of a task. The server's word wins; without it, the page works the word out from the stored status. */
+/**
+ * The plain status word of a task. The server (`shownStatus` of the run API) is the only source of the word: the page has no
+ * mapping of its own. With no word from the server, the stored status shows as it is.
+ */
 export function shownStatus(task: { status: string; shownStatus?: string | null }, runStatus: string): string {
-  const word = task.shownStatus || (shownWords[task.status] ?? task.status.replaceAll('_', ' '));
+  const word = task.shownStatus || task.status;
   // A run that ended as escalated has no recovery left: the task that was stuck is where the run stopped.
   return runStatus === 'escalated' && (word === 'stalled' || word === 'recovering' || word === 'running') ? 'escalated' : word;
 }
