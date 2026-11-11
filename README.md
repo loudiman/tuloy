@@ -52,6 +52,6 @@ An injection waits until an attempt of that agent uses it, in a run of the owner
 ## Who can call a Tuloy
 
 - Tuloy listens on `127.0.0.1` (this machine only). Set `TULOY_HOST` (for example `0.0.0.0`) to serve other machines.
-- The page and its API have no login. A call that changes something (start a run, inject, change the allowed list) is refused with 403 unless its `Host` header is `localhost` or `127.0.0.1` with the port, or the `TULOY_HOST` value with the port, and its `Origin`, when a browser sends one, is that same address. So open the dashboard by one of these names.
+- The page and its API have no login. Every call to the page, its API and the live events, a read included, is refused with 403 unless its `Host` header is `localhost` or `127.0.0.1` with the port, or the `TULOY_HOST` value with the port, and its `Origin`, when a browser sends one, is that same address. So open the dashboard by one of these names. The agent card and an invite link are open to everybody.
 - The A2A endpoint (`/a2a`) takes work only with a key from the allowed list. An invite link and the agent card of a peer must be `https` and not at a private address, unless `TULOY_PEER_ALLOW_LOCAL=1` (this machine only, plain http).
 - A numeric setting that is not a whole number in its range stops the start, with a message that names the setting.
