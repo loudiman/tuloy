@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
+import { readBody, readJson } from './allowed-list.ts';
 import type { Conductor } from './conductor.ts';
 import { createPeerServer } from './peer-server.ts';
 import { SAMPLE_GOAL } from './planner.ts';
@@ -66,11 +67,10 @@ export function createServer({
     if (req.method === 'GET' && path === '/api/runs') return json(200, { owner, demo, sampleGoal: SAMPLE_GOAL, runs: store.runs() });
     if (req.method === 'POST' && path === '/api/runs') {
       // An empty body starts the labelled sample goal.
-      let body = '';
-      for await (const chunk of req) body += chunk;
+      const body = await readBody(req);
       let goal: unknown;
       try {
-        goal = body ? JSON.parse(body).goal : SAMPLE_GOAL;
+        goal = body === '' ? SAMPLE_GOAL : JSON.parse(body ?? '').goal;
       } catch {}
       if (typeof goal !== 'string' || !goal.trim() || goal.length > 2000) return json(400, { error: 'goal must be a short text' });
       return json(201, { runId: conductor.startRun(goal).runId });
@@ -85,13 +85,7 @@ export function createServer({
     // The owner clears the pending injections, so that none stays for a later run.
     if (demo && req.method === 'DELETE' && path === '/api/injections') return (store.clearInjections(), res.writeHead(204).end());
     if (demo && req.method === 'POST' && path === '/api/injections') {
-      let body = '';
-      for await (const chunk of req) body += chunk;
-      let wanted: { task?: unknown; kind?: unknown } = {};
-      try {
-        wanted = JSON.parse(body) ?? {};
-      } catch {}
-      const { task = 'script', kind } = wanted;
+      const { task = 'script', kind } = ((await readJson(req)) ?? {}) as { task?: unknown; kind?: unknown };
       if (typeof task !== 'string' || !Object.hasOwn(skills, task)) return json(400, { error: `task must be an agent role, or goal for the full goal at a peer: ${Object.keys(skills).join(', ')}` });
       if (typeof kind !== 'string' || !injectionKinds.includes(kind)) return json(400, { error: `kind must be one of: ${injectionKinds.join(', ')}` });
       return json(201, store.addInjection(task as Skill, kind));

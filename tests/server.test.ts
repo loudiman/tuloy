@@ -184,3 +184,24 @@ test('a web page of another origin cannot start a run, inject a failure or chang
     server.close();
   }
 });
+
+// ---- Review fix 6: every body that the server reads has the size limit ----
+
+test('a body of more than 1 MB is refused: no run starts and no injection is stored', async () => {
+  const { server, url, store } = await startTestServer({ demo: true });
+  const padding = 'x'.repeat(1_100_000);
+  try {
+    const run = await fetch(`${url}/api/runs`, { method: 'POST', body: JSON.stringify({ goal: 'A short goal.', padding }) });
+    const injection = await fetch(`${url}/api/injections`, { method: 'POST', body: JSON.stringify({ kind: 'timeout', padding }) });
+
+    expect([run.status, injection.status]).toEqual([400, 400]);
+    expect([store.runs(), store.injections()]).toEqual([[], []]);
+    // The same bodies with no padding are accepted, and an empty body is still the sample goal.
+    expect((await fetch(`${url}/api/runs`, { method: 'POST', body: JSON.stringify({ goal: 'A short goal.' }) })).status).toBe(201);
+    expect((await fetch(`${url}/api/runs`, { method: 'POST' })).status).toBe(201);
+    expect(store.runs().map((r) => r.goal)).toEqual([SAMPLE_GOAL, 'A short goal.']);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});

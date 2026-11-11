@@ -139,15 +139,26 @@ export function createAllowedList({ store, owner, peerTasksPerHour, allowLocal }
   };
 }
 
+/** The body of a request as text, or undefined when it is larger than 1 MB. Every body that the server reads comes through here. */
+export async function readBody(req: http.IncomingMessage): Promise<string | undefined> {
+  let body = '';
+  let tooLarge = false;
+  // The rest of a body that is too large is read and dropped: a stop in the middle would close the connection before the answer.
+  for await (const chunk of req) {
+    if (tooLarge) continue;
+    body += chunk;
+    if (body.length > 1_000_000) {
+      tooLarge = true;
+      body = '';
+    }
+  }
+  return tooLarge ? undefined : body;
+}
+
 /** The JSON body of a request, or undefined when it is not JSON or is larger than 1 MB. */
 export async function readJson(req: http.IncomingMessage): Promise<unknown> {
-  let body = '';
-  for await (const chunk of req) {
-    body += chunk;
-    if (body.length > 1_000_000) return undefined;
-  }
   try {
-    return JSON.parse(body);
+    return JSON.parse((await readBody(req)) ?? '');
   } catch {
     return undefined;
   }
