@@ -18,11 +18,12 @@ const delay = Number(process.argv[3] ?? 1500);
 
 const rejected = {
   reviews: [
-    { script_id: 's1', verdict: 'reject', issues: ['The hook does not name the store.'] },
-    { script_id: 's2', verdict: 'pass', issues: [] },
+    { script_id: 's1', verdict: 'reject', score: 3, issues: ['The hook does not name the store.'], hints: ['Name the store in the first line.'] },
+    { script_id: 's2', verdict: 'pass', score: 8, issues: [], hints: [] },
   ],
 };
-const model = scriptedModel({ reviewer: [rejected] });
+// Three rejections: the first run uses its two retries and ends as escalated.
+const model = scriptedModel({ reviewer: [rejected, rejected, rejected] });
 const answer = model.doGenerate;
 model.doGenerate = async (options) => {
   await new Promise((resolve) => setTimeout(resolve, delay));
