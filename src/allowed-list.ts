@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type http from 'node:http';
 import { AGENT_CARD_PATH } from '@a2a-js/sdk';
 import { z } from 'zod';
+import { peersPage } from './peers-page.ts';
 import type { Store } from './store.ts';
 
 const webAddress = z.url({ protocol: /^https?$/ }).transform((address) => address.replace(/\/+$/, ''));
@@ -56,6 +57,10 @@ export function createAllowedList({ store, owner, peerTasksPerHour }: { store: S
       // ponytail: this Tuloy's address is the loopback socket of the request, as for the agent card. A public address needs a setting.
       const self = `http://${req.socket.localAddress}:${req.socket.localPort}`;
       const token = /^\/invite\/([\w-]+)$/.exec(path)?.[1];
+
+      if (req.method === 'GET' && path === '/peers') return (res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(peersPage), true);
+      // The link, opened in a browser: say what to do with it. It does not use up the invite.
+      if (req.method === 'GET' && token) return (res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(`This is an invite to the Tuloy of ${owner}. Paste the link into your own Tuloy, on the Peers page.`), true);
 
       // There is no login on loopback, so a web page that the owner has open could call this API. The browser names that page in Origin.
       const origin = req.headers.origin;

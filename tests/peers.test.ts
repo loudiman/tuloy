@@ -389,3 +389,15 @@ test('a text that is not an invite link, a link to a Tuloy that does not answer,
   expect(ownPage.status).toBe(201);
   expect(sam.store.peers()).toEqual([]);
 });
+
+test('the peers screen is its own page at /peers, with a link to the page of the runs', async () => {
+  const sam = await startTuloy('Sam');
+
+  const answer = await fetch(`${sam.url}/peers`);
+  const html = await answer.text();
+
+  expect(answer.status).toBe(200);
+  expect(answer.headers.get('content-type')).toContain('text/html');
+  expect(html).toContain('<title>Tuloy: peers</title>');
+  expect(html).toContain('href="/"');
+});
