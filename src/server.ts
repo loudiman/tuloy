@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
+import { AGENT_CARD_PATH } from '@a2a-js/sdk';
 import { stripTypeScriptTypes } from 'node:module';
 import { readBody, readJson } from './allowed-list.ts';
 import type { Conductor } from './conductor.ts';
@@ -51,10 +52,10 @@ export function createServer({
     const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
     const path = new URL(req.url ?? '/', 'http://tuloy').pathname;
     // There is no login, so a web page that the owner has open in the same browser could call the owner's API.
-    // Each call that changes something must name this Tuloy's own address in Host (a name of another site that points here,
+    // Each call, a read included, must name this Tuloy's own address in Host (a name of another site that points here,
     // DNS rebinding, does not), and its Origin, when the browser sends one, must be that same address.
-    // Not checked: the A2A endpoint (the key is the proof) and the answer to an invite (the token is the proof).
-    if (req.method !== 'GET' && path !== '/a2a' && !path.startsWith('/invite/')) {
+    // Not checked: the A2A endpoint (the key is the proof), the agent card (public) and an invite link (the token is the proof).
+    if (path !== '/a2a' && path !== `/${AGENT_CARD_PATH}` && !path.startsWith('/invite/')) {
       const named = req.headers.host;
       const own = ['localhost', '127.0.0.1', host].map((name) => `${name}:${req.socket.localPort}`);
       const origin = req.headers.origin;

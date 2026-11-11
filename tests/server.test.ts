@@ -11,7 +11,7 @@ async function startTestServer(options: { demo?: boolean; host?: string } = {}) 
   const { conductor, store } = testTuloy();
   const server = createServer({ store, conductor, owner: 'Lou', ...options });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  return { server, store, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  return { server, store, conductor, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
 }
 
 /** Reads the live event stream until the run ends. */
@@ -177,8 +177,6 @@ test('a web page of another origin cannot start a run, inject a failure or chang
     expect(await rawCall(url, 'POST', '/api/runs', { host, origin: url })).toBe(201);
     expect(await rawCall(url, 'POST', '/api/runs', { host: `localhost:${port}`, origin: `http://localhost:${port}` })).toBe(201);
     expect(await rawCall(url, 'POST', '/api/runs', { host })).toBe(201);
-    // A GET is not refused: the agent card and an opened invite link are for everybody.
-    expect(await rawCall(url, 'GET', '/api/runs', otherPage)).toBe(200);
   } finally {
     server.closeAllConnections();
     server.close();
@@ -237,6 +235,37 @@ test('the UI text uses the words of the glossary: re-route (not model switch), a
     expect(app).toContain('Handoffs, retries and re-routes show here as they happen.');
     expect(peers).not.toMatch(/request/i);
     expect(peers).toContain('Its next task or goal is refused.');
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+// ---- Second pass, A: the Host check is for every route of the owner's API, a read included ----
+
+test('a name that points at this Tuloy (DNS rebinding) cannot read the runs, the peers, the injections or the live events; the agent card and an invite link stay open', async () => {
+  const { server, url, store, conductor } = await startTestServer({ demo: true });
+  const { host, port } = new URL(url);
+  try {
+    const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+    await ended;
+    const rebound = { host: `evil.example:${port}` };
+    const reads = ['/api/runs', `/api/runs/${runId}`, '/api/peers', '/api/injections', '/api/events', '/', '/peers', '/page/app.ts'];
+
+    for (const path of reads) expect([path, await rawCall(url, 'GET', path, rebound)]).toEqual([path, 403]);
+    // Another site that calls this Tuloy by its own name: the browser names that site in Origin.
+    expect(await rawCall(url, 'GET', '/api/runs', { host, origin: 'https://evil.example' })).toBe(403);
+
+    // This Tuloy's own page reads all of them, by both names of this machine.
+    for (const path of reads.filter((p) => p !== '/api/events')) {
+      expect([path, await rawCall(url, 'GET', path, { host })]).toEqual([path, 200]);
+      expect([path, await rawCall(url, 'GET', path, { host: `localhost:${port}` })]).toEqual([path, 200]);
+    }
+    expect((await fetch(`${url}/api/events`)).status).toBe(200);
+    // For everybody: the agent card (a peer reads it) and an invite link that a person opens.
+    expect(await rawCall(url, 'GET', '/.well-known/agent-card.json', rebound)).toBe(200);
+    expect(await rawCall(url, 'GET', '/invite/abc', rebound)).toBe(200);
+    expect(store.runs()).toHaveLength(1);
   } finally {
     server.closeAllConnections();
     server.close();
