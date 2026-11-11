@@ -68,7 +68,48 @@ export async function runAgent(role: Role, input: unknown, model: LanguageModel,
 /** Tuloy checks every output with its own schema in any case. The parse also drops fields that are not in the schema. */
 function check(role: Role, output: unknown): AgentResult {
   const checked = (roles[role].output as z.ZodType).safeParse(output);
-  return checked.success ? { ok: true, output: checked.data } : { ok: false, failure: { kind: 'invalid_output', detail: checked.error.message } };
+  return checked.success ? { ok: true, output: checked.data } : { ok: false, failure: { kind: 'invalid_output', detail: plainIssue(checked.error.issues), raw: checked.error.message } };
+}
+
+const listNames: Record<string, string> = { trends: 'list of trends', scripts: 'list of scripts', reviews: 'list of reviews', posts: 'list of posts' };
+const typeNames: Record<string, string> = { array: 'a list', string: 'a text', number: 'a number', boolean: 'yes or no', object: 'a group of fields' };
+
+/**
+ * The first problem of an output as one plain sentence for the event trail, for example "The output has no list of scripts."
+ * The raw text of the schema check stays in the event data.
+ */
+function plainIssue(issues: z.core.$ZodIssue[]): string {
+  const [issue] = issues;
+  const [top, index, ...rest] = issue.path.map(String);
+  const words = (key: string) => key.replaceAll('_', ' ');
+  // ['scripts'] → "list of scripts"; ['scripts', 0] → "script 1"; ['scripts', 0, 'hook'] → "hook of script 1".
+  const item = index === undefined ? '' : `${words(top).replace(/s$/, '')} ${Number(index) + 1}`;
+  const name = top === undefined ? '' : index === undefined ? (listNames[top] ?? words(top)) : rest.length ? `${rest.map(words).join(' ')} of ${item}` : item;
+  const more = issues.length > 1 ? ` The event content has ${issues.length - 1} more.` : '';
+  if (!name) return `The output is not valid.${more}`;
+  const missing = issue.code === 'invalid_type' && issue.message.endsWith('received undefined');
+  if (missing) return `The output has no ${name}.${more}`;
+  const problem =
+    issue.code === 'invalid_type'
+      ? `must be ${typeNames[issue.expected] ?? issue.expected}, but it is not`
+      : issue.code === 'too_small'
+        ? 'is empty'
+        : issue.code === 'invalid_value'
+          ? `is not one of: ${issue.values.join(', ')}`
+          : 'is not valid';
+  return `The ${name} in the output ${problem}.${more}`;
+}
+
+/** An output that the AI SDK refused: Tuloy checks the model's text again with its own schema, to say what is wrong in plain words. */
+function refused(role: Role, text: string | undefined, raw: string): AgentResult {
+  let output: unknown;
+  try {
+    output = JSON.parse(text ?? '');
+  } catch {
+    return { ok: false, failure: { kind: 'invalid_output', detail: 'The output is not JSON.', raw } };
+  }
+  const checked = check(role, output);
+  return checked.ok ? { ok: false, failure: { kind: 'invalid_output', detail: 'The output does not match the schema.', raw } } : checked;
 }
 
 async function callModel(role: Role, input: unknown, model: LanguageModel, abortSignal: AbortSignal, clock: Clock, maxOutputTokens: number): Promise<AgentResult> {
@@ -87,7 +128,8 @@ async function callModel(role: Role, input: unknown, model: LanguageModel, abort
   } catch (error) {
     // A provider can put an address with a key id in its error text. No address goes into the event log.
     const detail = (error instanceof Error ? error.message : String(error)).replace(/https?:\/\/[^\s)]+/g, '[address removed]');
-    if (NoObjectGeneratedError.isInstance(error) || NoOutputGeneratedError.isInstance(error)) return { ok: false, failure: { kind: 'invalid_output', detail } };
+    if (NoObjectGeneratedError.isInstance(error)) return refused(role, error.text, detail);
+    if (NoOutputGeneratedError.isInstance(error)) return { ok: false, failure: { kind: 'invalid_output', detail: 'The model gave no output.', raw: detail } };
     if (APICallError.isInstance(error) && error.statusCode === 429) {
       // Retry-After is a number of seconds or a date.
       const after = error.responseHeaders?.['retry-after'];

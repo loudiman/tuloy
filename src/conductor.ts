@@ -147,7 +147,7 @@ export function createConductor({ store, models, clock, limits }: { store: Store
         break;
       }
       const { failure } = result;
-      store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind });
+      store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind, data: failure.raw ? { detail: failure.raw } : undefined });
       store.updateTask(runId, taskId, { status: failedStatus[failure.kind] });
 
       const action = nextAction(failure, history, limits);

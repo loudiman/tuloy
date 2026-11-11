@@ -3,6 +3,8 @@ export type Failure = {
   kind: 'timeout' | 'missed_heartbeat' | 'invalid_output' | 'model_unavailable' | 'rate_limited';
   /** Plain words for the event log. */
   detail: string;
+  /** The raw text behind `detail`, when `detail` is a plain sentence made from it. It goes into the event data. */
+  raw?: string;
   /** Only for `rate_limited`: the wait that the model asked for. */
   retryAfterMs?: number;
 };

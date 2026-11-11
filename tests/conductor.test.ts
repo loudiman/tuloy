@@ -197,3 +197,19 @@ test('run state and events are still there after a restart of the program', asyn
   expect({ run: store.run(runId), tasks: store.tasks(runId), events: store.events(runId) }).toEqual(before);
   expect(store.runs().map((r) => r.id)).toEqual([runId]);
 });
+
+test('the cause of an invalid output is a plain sentence, and the raw detail stays in the event data', async () => {
+  const wrongLanguage = { scripts: [{ id: 's1', hook: 'A hook', body: 'A body', cta: 'A CTA', language: 'klingon' }] };
+  const { conductor, store } = testTuloy({ script: { script: [{ scripts: 'junk' }, {}, wrongLanguage] } });
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  const invalid = store.events(runId).filter((e) => e.action === 'validate' && e.result === 'invalid_output');
+  expect(invalid.map((e) => e.cause)).toEqual([
+    'The list of scripts in the output must be a list, but it is not.',
+    'The output has no list of scripts.',
+    'The language of script 1 in the output is not one of: english, filipino, taglish.',
+  ]);
+  expect((invalid[0].data as { detail: string }).detail).toContain('expected array');
+});
