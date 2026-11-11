@@ -12,6 +12,8 @@ export function readSettings(env: Record<string, string | undefined>) {
   };
   return {
     owner: env.TULOY_OWNER || 'Owner',
+    /** The address that the server listens on. The default takes calls from this machine only. */
+    host: env.TULOY_HOST || '127.0.0.1',
     port: whole('TULOY_PORT', 4000, 1, 65_535),
     dataDir: env.TULOY_DATA_DIR || './data',
     peerTasksPerHour: whole('TULOY_PEER_TASKS_PER_HOUR', 20, 0, 10_000),

@@ -25,7 +25,10 @@ const pageFiles: Record<string, { file: URL; type: string }> = {
 };
 
 /** Serves the dashboard, its API, the A2A surface, and the live event stream (server-sent events from the event log). */
-/** `peerAllowLocal` is the setting TULOY_PEER_ALLOW_LOCAL: it permits an invite and an agent card at a plain-http address of this same machine. */
+/**
+ * `host` is the setting TULOY_HOST: the address that this Tuloy listens on. The owner's API takes a call under that name too.
+ * `peerAllowLocal` is the setting TULOY_PEER_ALLOW_LOCAL: it permits an invite and an agent card at a plain-http address of this same machine.
+ */
 export function createServer({
   store,
   conductor,
@@ -33,6 +36,7 @@ export function createServer({
   peerTasksPerHour = 20,
   demo = false,
   peerAllowLocal = false,
+  host = '127.0.0.1',
 }: {
   store: Store;
   conductor: Conductor;
@@ -40,6 +44,7 @@ export function createServer({
   peerTasksPerHour?: number;
   demo?: boolean;
   peerAllowLocal?: boolean;
+  host?: string;
 }) {
   const peerServer = createPeerServer({ store, conductor, owner, peerTasksPerHour, allowLocal: peerAllowLocal });
   return http.createServer(async (req, res) => {
@@ -50,10 +55,10 @@ export function createServer({
     // DNS rebinding, does not), and its Origin, when the browser sends one, must be that same address.
     // Not checked: the A2A endpoint (the key is the proof) and the answer to an invite (the token is the proof).
     if (req.method !== 'GET' && path !== '/a2a' && !path.startsWith('/invite/')) {
-      const host = req.headers.host;
-      const own = ['localhost', '127.0.0.1'].map((name) => `${name}:${req.socket.localPort}`);
+      const named = req.headers.host;
+      const own = ['localhost', '127.0.0.1', host].map((name) => `${name}:${req.socket.localPort}`);
       const origin = req.headers.origin;
-      if (!host || !own.includes(host) || (origin !== undefined && URL.parse(origin)?.host !== host)) return json(403, { error: 'Only this Tuloy\'s own page can do this.' });
+      if (!named || !own.includes(named) || (origin !== undefined && URL.parse(origin)?.host !== named)) return json(403, { error: 'Only this Tuloy\'s own page can do this.' });
     }
     if (await peerServer.handle(req, res)) return;
     const runId = Number(/^\/api\/runs\/(\d+)$/.exec(path)?.[1]);

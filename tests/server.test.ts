@@ -205,3 +205,22 @@ test('a body of more than 1 MB is refused: no run starts and no injection is sto
     server.close();
   }
 });
+
+// ---- Review fix 11: the setting TULOY_HOST, for a Tuloy that serves other machines ----
+
+test('with a configured host, the owner\'s API takes a call that names that host, and still refuses another site', async () => {
+  const { server, url, store } = await startTestServer({ host: '192.168.1.20' });
+  const { port } = new URL(url);
+  try {
+    const own = `192.168.1.20:${port}`;
+    expect(await rawCall(url, 'POST', '/api/runs', { host: own, origin: `http://${own}` })).toBe(201);
+    expect(await rawCall(url, 'POST', '/api/runs', { host: `localhost:${port}` })).toBe(201);
+    expect(await rawCall(url, 'POST', '/api/runs', { host: own, origin: 'https://evil.example' })).toBe(403);
+    expect(await rawCall(url, 'POST', '/api/runs', { host: `evil.example:${port}`, origin: `http://evil.example:${port}` })).toBe(403);
+    expect(await rawCall(url, 'POST', '/api/runs', { host: `192.168.1.21:${port}` })).toBe(403);
+    expect(store.runs()).toHaveLength(2);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});

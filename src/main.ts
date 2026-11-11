@@ -22,7 +22,7 @@ const store = openStore(join(settings.dataDir, 'tuloy.sqlite'), systemClock);
 const conductor = createConductor({ store, models, clock: systemClock, limits: settings.limits, peerClient: createPeerClient({ allowLocal: settings.peerAllowLocal }), demo: settings.demo });
 // Runs that were not finished at the last stop continue now, with no action from the owner.
 conductor.continueRuns();
-// ponytail: loopback only, there is no login for the page and its API. The A2A endpoint takes work only with a key from the allowed list.
-createServer({ store, conductor, owner: settings.owner, demo: settings.demo, peerTasksPerHour: settings.peerTasksPerHour, peerAllowLocal: settings.peerAllowLocal }).listen(settings.port, '127.0.0.1', () => {
+// TULOY_HOST is 127.0.0.1 unless the owner sets it: there is no login for the page and its API. The A2A endpoint takes work only with a key from the allowed list.
+createServer({ store, conductor, owner: settings.owner, demo: settings.demo, peerTasksPerHour: settings.peerTasksPerHour, peerAllowLocal: settings.peerAllowLocal, host: settings.host }).listen(settings.port, settings.host, () => {
   console.log(`Tuloy of ${settings.owner}: http://localhost:${settings.port}`);
 });
