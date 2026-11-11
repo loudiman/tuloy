@@ -30,6 +30,14 @@ async function lends(address: string): Promise<string[] | null> {
 /** The one part of a key that the screen can show: its last 4 characters, and nothing of a short key. */
 const keyEnd = (key: string) => (key.length >= 16 ? key.slice(-4) : '');
 
+function decodeName(part: string) {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
 const NOT_OPEN = 'This invite was used before, or it is older than 24 hours. Ask the other owner for a new invite.';
 
 const newKey = () => randomBytes(32).toString('base64url');
@@ -40,6 +48,7 @@ const hash = (token: string) => createHash('sha256').update(token).digest('hex')
  * Keys travel only in request and response bodies between the two Tuloys. They are never in a link, an event or an answer to the page.
  */
 export function createAllowedList({ store, owner, peerTasksPerHour }: { store: Store; owner: string; peerTasksPerHour: number }) {
+  const onList = (name: string) => store.peers().some((peer) => peer.name === name);
   return {
     async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
       const json = (status: number, body: unknown) => (res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body)), true);
@@ -47,6 +56,12 @@ export function createAllowedList({ store, owner, peerTasksPerHour }: { store: S
       // ponytail: this Tuloy's address is the loopback socket of the request, as for the agent card. A public address needs a setting.
       const self = `http://${req.socket.localAddress}:${req.socket.localPort}`;
       const token = /^\/invite\/([\w-]+)$/.exec(path)?.[1];
+
+      // There is no login on loopback, so a web page that the owner has open could call this API. The browser names that page in Origin.
+      const origin = req.headers.origin;
+      if (path.startsWith('/api/') && req.method !== 'GET' && origin && URL.parse(origin)?.host !== req.headers.host) {
+        return json(403, { error: 'Only this Tuloy\'s own page can change the allowed list.' });
+      }
 
       if (req.method === 'GET' && path === '/api/peers') {
         const peers = store.peers().map(async (peer) => ({
@@ -69,7 +84,7 @@ export function createAllowedList({ store, owner, peerTasksPerHour }: { store: S
       // The owner removes a peer. The A2A endpoint reads the list on each request, so the peer's next request is refused.
       const toRemove = /^\/api\/peers\/([^/]+)$/.exec(path)?.[1];
       if (req.method === 'DELETE' && toRemove) {
-        return store.removePeer(decodeURIComponent(toRemove)) ? (res.writeHead(204).end(), true) : json(404, { error: 'No such peer on the allowed list.' });
+        return store.removePeer(decodeName(toRemove)) ? (res.writeHead(204).end(), true) : json(404, { error: 'No such peer on the allowed list.' });
       }
 
       // The owner makes an invite. The token is random; only its hash is stored.
@@ -85,9 +100,17 @@ export function createAllowedList({ store, owner, peerTasksPerHour }: { store: S
         const address = link && /^(https?:\/\/[^/]+)\/invite\/[\w-]+$/.exec(link)?.[1];
         if (!link || !address) return json(400, { error: 'That is not an invite link.' });
         const acceptKey = newKey();
-        const answer = await fetch(link, { method: 'POST', body: JSON.stringify({ name: owner, address: self, key: acceptKey }), signal: AbortSignal.timeout(10_000) });
-        if (answer.status === 410) return json(410, { error: NOT_OPEN });
-        const result = inviteResult.parse(await answer.json());
+        let answer: Response | undefined;
+        let result: z.infer<typeof inviteResult> | undefined;
+        try {
+          answer = await fetch(link, { method: 'POST', body: JSON.stringify({ name: owner, address: self, key: acceptKey }), signal: AbortSignal.timeout(10_000) });
+          result = inviteResult.safeParse(await answer.json()).data;
+        } catch {}
+        if (answer?.status === 410) return json(410, { error: NOT_OPEN });
+        if (answer?.status === 409) return json(409, { error: `The other Tuloy has a peer with the name ${owner} on its allowed list. Its owner must remove that entry first. The invite is still open.` });
+        if (!answer?.ok || !result) return json(502, { error: 'The Tuloy that made the invite did not answer as a Tuloy. Check the link and that the other Tuloy is on.' });
+        // ponytail: the other side has this Tuloy on its list now and this side refuses. The other owner sees a peer that cannot connect and removes it.
+        if (onList(result.name)) return json(409, { error: `A peer with the name ${result.name} is on your allowed list. Remove it first, then ask for a new invite.` });
         store.addPeer({ name: result.name, address, sendKey: result.key, acceptKey });
         return json(201, { name: result.name, address });
       }
@@ -97,6 +120,8 @@ export function createAllowedList({ store, owner, peerTasksPerHour }: { store: S
         const answer = inviteAnswer.safeParse(await readJson(req));
         if (!store.inviteIsOpen(hash(token))) return json(410, { error: NOT_OPEN });
         if (!answer.success) return json(400, { error: 'An answer to an invite needs a name, an address and a key.' });
+        // An invite adds a peer; it never replaces one. If it did, a person with an invite could take the place of a peer.
+        if (onList(answer.data.name)) return json(409, { error: 'A peer with this name is on the allowed list.' });
         // No await from the check to here: two answers at the same time cannot both use the invite.
         if (!store.useInvite(hash(token))) return json(410, { error: NOT_OPEN });
         const acceptKey = newKey();

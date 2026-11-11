@@ -348,3 +348,44 @@ test('an agent whose agent card cannot be read stays on the list and lends nothi
 
   expect(list.peers).toMatchObject([{ name: 'Gone', lends: null, sendKeyEnd: '' }]);
 });
+
+test('an invite cannot replace a peer that is on the allowed list: the same name is refused and the invite stays open', async () => {
+  const { sam, lou } = await invited();
+  const keysBefore = sam.store.peers();
+  // A second Tuloy says that its owner is Lou too.
+  const otherLou = await startTuloy('Lou');
+  const link = await makeInvite(sam.url);
+
+  const refused = await acceptInvite(otherLou.url, link);
+
+  expect(refused.status).toBe(409);
+  expect(sam.store.peers()).toEqual(keysBefore);
+  expect(otherLou.store.peers()).toEqual([]);
+  // The owner removes the old entry; then the same invite works.
+  await fetch(`${sam.url}/api/peers/Lou`, { method: 'DELETE' });
+  expect((await acceptInvite(otherLou.url, link)).status).toBe(201);
+  expect(sam.store.peers().map((p) => p.address)).toEqual([otherLou.url]);
+  expect(lou.store.peers().map((p) => p.name)).toEqual(['Sam']);
+});
+
+test('a text that is not an invite link, a link to a Tuloy that does not answer, and a request from another web page are refused', async () => {
+  const sam = await startTuloy('Sam');
+
+  const notALink = await acceptInvite(sam.url, 'hello');
+  const notAnInvite = await acceptInvite(sam.url, `${sam.url}/api/runs`);
+  const nobodyThere = await acceptInvite(sam.url, 'http://127.0.0.1:1/invite/abc');
+  // A web page that the owner has open in the same browser must not make an invite, accept one, add a peer or remove one.
+  const fromAPage = { origin: 'https://evil.example', host: new URL(sam.url).host };
+  const stolen = await Promise.all([
+    fetch(`${sam.url}/api/invites`, { method: 'POST', headers: fromAPage }),
+    fetch(`${sam.url}/api/invites/accept`, { method: 'POST', headers: fromAPage, body: '{}' }),
+    fetch(`${sam.url}/api/peers`, { method: 'POST', headers: fromAPage, body: JSON.stringify({ name: 'Evil', address: 'https://evil.example', sendKey: 'k', acceptKey: 'k' }) }),
+    fetch(`${sam.url}/api/peers/Lou`, { method: 'DELETE', headers: fromAPage }),
+  ]);
+  const ownPage = await fetch(`${sam.url}/api/invites`, { method: 'POST', headers: { origin: sam.url } });
+
+  expect([notALink.status, notAnInvite.status, nobodyThere.status]).toEqual([400, 400, 502]);
+  expect(stolen.map((r) => r.status)).toEqual([403, 403, 403, 403]);
+  expect(ownPage.status).toBe(201);
+  expect(sam.store.peers()).toEqual([]);
+});
