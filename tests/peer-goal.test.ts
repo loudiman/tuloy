@@ -307,3 +307,35 @@ test('the demo command and the sample command turn on demo mode and the same-mac
   expect(settings(scripts['start:sample']!)).toMatchObject({ demo: true, peerAllowLocal: true, owner: 'Sam (sample owner)', port: 4001, dataDir: './data/sample' });
   expect(settings(scripts.start!)).toMatchObject({ demo: false, peerAllowLocal: false });
 });
+
+// ---- Second pass, B: the full goal goes to the first peer that did not refuse the task in step 3 ----
+
+const failedLater: A2aAnswer = { status: 'failed', failure: 'agent-failed', text: 'The script agent did not finish the task: escalated.', taskId: 'a2a-task-1', contextId: 'a2a-context-1' };
+const withAna = (tuloy: ReturnType<typeof ownModelsDown>) => (tuloy.store.addPeer({ name: 'Ana', address: 'https://ana.example', sendKey: 'the-key-that-ana-accepts-from-this-tuloy', acceptKey: 'the-key-from-ana' }), tuloy);
+const sentTo = ({ peer }: ReturnType<typeof ownModelsDown>) => peer.calls.filter((c) => c.move === 'send').map((c) => new URL(c.call.address).hostname);
+
+test('the first peer refuses the task and the second takes it and fails: the full goal goes to the second peer, not to the one that refused', async () => {
+  // Ana is the first peer of the allowed list, Maria the second.
+  const tuloy = withAna(ownModelsDown({ peer: [refused, working, failedLater, working, result(goalOutput)] }));
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(store.tasks(runId)).toMatchObject([{ id: 'goal', title: 'Give the full goal to Maria', status: 'done', agent: "Maria's conductor" }]);
+  expect(store.events(runId).find((e) => e.action === 'goal_to_peer')).toMatchObject({ result: 'Maria', data: { peer: 'Maria', tried: ['the own script agent', 'the backup model', "Ana's script agent", "Maria's script agent"] } });
+  expect(sentTo(tuloy)).toEqual(['ana.example', 'maria.example', 'maria.example']);
+});
+
+test('both peers refuse the task: the full goal is tried one time at the first peer, as before', async () => {
+  const tuloy = withAna(ownModelsDown({ peer: [refused, refused, working, result(goalOutput)] }));
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(store.tasks(runId)).toMatchObject([{ id: 'goal', title: 'Give the full goal to Ana', agent: "Ana's conductor" }]);
+  expect(sentTo(tuloy)).toEqual(['ana.example', 'maria.example', 'ana.example']);
+});

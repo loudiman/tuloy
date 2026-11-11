@@ -149,7 +149,8 @@ export function createConductor({
 
     const fresh = !afterRestart && !rejection;
     // Step 3: the peer that has the task. Step 4: the one task of the new task graph version is the full goal, and a peer's conductor has it from the start.
-    let peer: Peer | undefined = task.role === 'goal' ? store.peers()[0] : undefined;
+    const givenTo = (store.events(runId).findLast((e) => e.action === 'goal_to_peer')?.data as { peer?: string } | null)?.peer;
+    let peer: Peer | undefined = task.role === 'goal' ? (store.peers().find((p) => p.name === givenTo) ?? store.peers()[0]) : undefined;
     if (fresh) {
       const agent = peer ? peerAgentName(peer, task.role) : task.role;
       store.updateTask(runId, taskId, { agent, status: 'running' });
@@ -187,6 +188,8 @@ export function createConductor({
     // The backup model, or a peer, has the task from its `reroute` event on. After a restart or a rejection that also comes from the event log.
     let model: 'primary' | 'backup' | 'peer' = toPeer !== undefined || task.role === 'goal' ? 'peer' : rerouted !== undefined ? 'backup' : 'primary';
     let allDown: string | undefined;
+    // The peers that did not take this task in step 3 (a fast failure). ponytail: in memory; after a restart the list is empty and step 4 asks the first peer.
+    const didNotTake: string[] = [];
     // After a restart or a rejection the first turn makes no attempt: the stop or the rejection is the failure, and recovery starts from it.
     let stopped: Failure | null = rejection
       ? rejection
@@ -244,6 +247,7 @@ export function createConductor({
         store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind, data: failure.raw ? { detail: failure.raw } : undefined });
       store.updateTask(runId, taskId, { status: failedStatus[failure.kind] });
 
+      if (failure.onPeer && failure.fast && peer) didNotTake.push(peer.name);
       const action = nextAction(failure, history, limits, { forPeer: run.forPeer !== null, peers: store.peers().length });
       if (action.do === 'escalate') {
         // Step 5 after step 4: the cause names every path that was tried, so that the stuck reason does too.
@@ -256,8 +260,8 @@ export function createConductor({
       }
       if (action.do === 'goal') {
         // Step 4: the full goal goes to a peer, one time. The task graph gets a new version with one task; `drive` starts it.
-        // ponytail: the first peer of the allowed list gets it, as in step 3.
-        const to = store.peers()[0]!;
+        // It goes to the first peer of the allowed list that did not refuse the task in step 3. If each one did, the first is tried one time.
+        const to = store.peers().find((p) => !didNotTake.includes(p.name)) ?? store.peers()[0]!;
         const tried = store.events(runId).filter((e) => e.taskId === taskId);
         const retries = tried.filter((e) => e.action === 'retry').length;
         const paths = [
