@@ -237,3 +237,15 @@ test('an accepted invite puts each Tuloy on the allowed list of the other, and a
   expect(sam.store.runs()).toMatchObject([{ forPeer: 'Lou', status: 'done' }]);
   expect(lou.store.runs()).toMatchObject([{ forPeer: 'Sam', status: 'done' }]);
 });
+
+test('an invite works one time: a second Tuloy that uses the same link is refused and gets on no list', async () => {
+  const { sam, link } = await invited();
+  const ana = await startTuloy('Ana');
+
+  const second = await acceptInvite(ana.url, link);
+
+  expect(second.status).toBe(410);
+  expect(((await second.json()) as any).error).toContain('used');
+  expect(sam.store.peers().map((p) => p.name)).toEqual(['Lou']);
+  expect(ana.store.peers()).toEqual([]);
+});

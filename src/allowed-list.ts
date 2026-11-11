@@ -11,6 +11,8 @@ const inviteAnswer = z.object({ name: peerName, address: webAddress, key: z.stri
 /** What comes back: the name of the owner that made the invite, and the key that their Tuloy will accept. */
 const inviteResult = z.object({ name: peerName, key: z.string().min(20).max(200) });
 
+const NOT_OPEN = 'This invite was used before, or it is older than 24 hours. Ask the other owner for a new invite.';
+
 const newKey = () => randomBytes(32).toString('base64url');
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
@@ -41,6 +43,7 @@ export function createAllowedList({ store, owner }: { store: Store; owner: strin
         if (!link || !address) return json(400, { error: 'That is not an invite link.' });
         const acceptKey = newKey();
         const answer = await fetch(link, { method: 'POST', body: JSON.stringify({ name: owner, address: self, key: acceptKey }), signal: AbortSignal.timeout(10_000) });
+        if (answer.status === 410) return json(410, { error: NOT_OPEN });
         const result = inviteResult.parse(await answer.json());
         store.addPeer({ name: result.name, address, sendKey: result.key, acceptKey });
         return json(201, { name: result.name, address });
@@ -49,8 +52,10 @@ export function createAllowedList({ store, owner }: { store: Store; owner: strin
       // The other Tuloy answers the invite. No login: the token is the proof.
       if (req.method === 'POST' && token) {
         const answer = inviteAnswer.safeParse(await readJson(req));
-        if (!store.inviteIsOpen(hash(token))) return json(410, { error: 'This invite is not open.' });
+        if (!store.inviteIsOpen(hash(token))) return json(410, { error: NOT_OPEN });
         if (!answer.success) return json(400, { error: 'An answer to an invite needs a name, an address and a key.' });
+        // No await from the check to here: two answers at the same time cannot both use the invite.
+        if (!store.useInvite(hash(token))) return json(410, { error: NOT_OPEN });
         const acceptKey = newKey();
         store.addPeer({ name: answer.data.name, address: answer.data.address, sendKey: answer.data.key, acceptKey });
         return json(201, { name: owner, key: acceptKey });

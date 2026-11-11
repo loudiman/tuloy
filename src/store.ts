@@ -166,9 +166,13 @@ export function openStore(file: string, clock: Clock) {
     createInvite(tokenHash: string) {
       db.prepare('INSERT INTO invites (token_hash, expires_at) VALUES (?, ?)').run(tokenHash, clock.now());
     },
-    /** True when there is such an invite. */
+    /** True when there is such an invite and it is not used. */
     inviteIsOpen(tokenHash: string): boolean {
-      return !!db.prepare('SELECT 1 FROM invites WHERE token_hash = ?').get(tokenHash);
+      return !!db.prepare('SELECT 1 FROM invites WHERE token_hash = ? AND used_at IS NULL').get(tokenHash);
+    },
+    /** Uses up an open invite. False when it was not open: an invite works one time. */
+    useInvite(tokenHash: string): boolean {
+      return db.prepare('UPDATE invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL').run(clock.now(), tokenHash).changes === 1;
     },
     close() {
       db.close();
