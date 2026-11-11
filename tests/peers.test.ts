@@ -137,6 +137,61 @@ test('past the limit of tasks per hour for a peer, the next task is rejected; an
   expect(await state()).toBe(TaskState.TASK_STATE_COMPLETED);
 });
 
+test('work for a peer is a run with the label of the peer, in the event log and in the API of the page', async () => {
+  const { sam } = await twoPeers();
+  const lou = await peerClient(sam.url, 'key-from-lou');
+  await fetch(`${sam.url}/api/runs`, { method: 'POST' }); // Sam's own run, to compare
+
+  await lou.ended((await lou.send('script', scriptInput)).id);
+
+  const list = (await (await fetch(`${sam.url}/api/runs`)).json()) as any;
+  expect(list.runs.map((r: any) => [r.forPeer, r.goal])).toEqual([['Lou', SAMPLE_GOAL], [null, SAMPLE_GOAL]]);
+  const state = (await (await fetch(`${sam.url}/api/runs/${list.runs[0].id}`)).json()) as any;
+  expect(state.run).toMatchObject({ forPeer: 'Lou', status: 'done' });
+  expect(state.tasks.map((t: any) => [t.title, t.agent, t.status, t.output])).toEqual([['Write scripts', 'script', 'done', goodOutput.script]]);
+  expect(state.events.map((e: any) => [e.action, e.result])).toEqual([
+    ['peer_task', 'accepted for Lou'],
+    ['assign', 'script'],
+    ['dispatch', 'started'],
+    ['validate', 'valid'],
+    ['end', 'done'],
+  ]);
+  expect(state.events[0]).toMatchObject({ taskId: 'scripts', cause: 'Lou sent a task for the script agent', data: { peer: 'Lou', input: scriptInput } });
+});
+
+test('when the agent cannot finish a task for a peer, the A2A task is failed and the run is escalated', async () => {
+  const { sam } = await twoPeers({ script: { script: [new Error('[model down]')] } });
+  const lou = await peerClient(sam.url, 'key-from-lou');
+
+  const ended = await lou.ended((await lou.send('script', scriptInput)).id);
+
+  expect(ended.status?.state).toBe(TaskState.TASK_STATE_FAILED);
+  expect(ended.artifacts).toEqual([]);
+  expect(sam.store.runs()).toMatchObject([{ forPeer: 'Lou', status: 'escalated' }]);
+});
+
+test('a peer cannot read the task of another peer', async () => {
+  const { sam } = await twoPeers();
+  await allow(sam.url, { name: 'Ana', address: 'http://127.0.0.1:1', sendKey: 'key-to-ana', acceptKey: 'key-from-ana' });
+  const lou = await peerClient(sam.url, 'key-from-lou');
+  const ana = await peerClient(sam.url, 'key-from-ana');
+
+  const sent = await lou.send('script', scriptInput);
+
+  await expect(ana.ended(sent.id)).rejects.toThrow();
+  expect((await lou.ended(sent.id)).status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+});
+
+test('the allowed list is in the API without the keys', async () => {
+  const { sam } = await twoPeers();
+
+  const list = await (await fetch(`${sam.url}/api/peers`)).json();
+  const bad = await fetch(`${sam.url}/api/peers`, { method: 'POST', body: JSON.stringify({ name: 'No keys', address: 'http://127.0.0.1:1' }) });
+
+  expect(list).toEqual({ peers: [{ name: 'Lou', address: expect.stringContaining('http://127.0.0.1:') }] });
+  expect(bad.status).toBe(400);
+});
+
 test('the agent card is at the well-known address and lists a skill for each agent role', async () => {
   const sam = await startTuloy('Sam');
 
