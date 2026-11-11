@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type http from 'node:http';
+import { AGENT_CARD_PATH } from '@a2a-js/sdk';
 import { z } from 'zod';
 import type { Store } from './store.ts';
 
@@ -11,16 +12,34 @@ const inviteAnswer = z.object({ name: peerName, address: webAddress, key: z.stri
 /** What comes back: the name of the owner that made the invite, and the key that their Tuloy will accept. */
 const inviteResult = z.object({ name: peerName, key: z.string().min(20).max(200) });
 
+/** An entry that the owner adds by hand. An outside agent that only takes work has no `acceptKey`: it gets a random one that nobody knows. */
+const newPeer = z.object({ name: peerName, address: webAddress, sendKey: z.string().min(1), acceptKey: z.string().min(1).optional() });
+/** The part of an agent card that the peers screen shows. */
+const cardSkills = z.object({ skills: z.array(z.object({ name: z.string().max(200) })).max(100) });
+
+/** What a peer or outside agent lends: the names of the skills on its agent card. Null when the card cannot be read. */
+async function lends(address: string): Promise<string[] | null> {
+  try {
+    const card = await fetch(`${address}/${AGENT_CARD_PATH}`, { signal: AbortSignal.timeout(3000) });
+    return cardSkills.parse(await card.json()).skills.map((skill) => skill.name);
+  } catch {
+    return null;
+  }
+}
+
+/** The one part of a key that the screen can show: its last 4 characters, and nothing of a short key. */
+const keyEnd = (key: string) => (key.length >= 16 ? key.slice(-4) : '');
+
 const NOT_OPEN = 'This invite was used before, or it is older than 24 hours. Ask the other owner for a new invite.';
 
 const newKey = () => randomBytes(32).toString('base64url');
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
 /**
- * The owner's side of the allowed list: invites. `handle` answers false when the request is not for it.
+ * The owner's side of the allowed list: read it, add to it, remove from it, and invites. `handle` answers false when the request is not for it.
  * Keys travel only in request and response bodies between the two Tuloys. They are never in a link, an event or an answer to the page.
  */
-export function createAllowedList({ store, owner }: { store: Store; owner: string }) {
+export function createAllowedList({ store, owner, peerTasksPerHour }: { store: Store; owner: string; peerTasksPerHour: number }) {
   return {
     async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
       const json = (status: number, body: unknown) => (res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body)), true);
@@ -28,6 +47,24 @@ export function createAllowedList({ store, owner }: { store: Store; owner: strin
       // ponytail: this Tuloy's address is the loopback socket of the request, as for the agent card. A public address needs a setting.
       const self = `http://${req.socket.localAddress}:${req.socket.localPort}`;
       const token = /^\/invite\/([\w-]+)$/.exec(path)?.[1];
+
+      if (req.method === 'GET' && path === '/api/peers') {
+        const peers = store.peers().map(async (peer) => ({
+          name: peer.name,
+          address: peer.address,
+          lends: await lends(peer.address),
+          tasksInLastHour: store.peerRunsInLastHour(peer.name),
+          sendKeyEnd: keyEnd(peer.sendKey),
+          acceptKeyEnd: keyEnd(peer.acceptKey),
+        }));
+        return json(200, { owner, tasksPerHourLimit: peerTasksPerHour, peers: await Promise.all(peers) });
+      }
+      if (req.method === 'POST' && path === '/api/peers') {
+        const peer = newPeer.safeParse(await readJson(req));
+        if (!peer.success) return json(400, { error: 'An entry needs a name, a web address and the key to send with.' });
+        store.addPeer({ ...peer.data, acceptKey: peer.data.acceptKey ?? newKey() });
+        return json(201, { name: peer.data.name, address: peer.data.address });
+      }
 
       // The owner removes a peer. The A2A endpoint reads the list on each request, so the peer's next request is refused.
       const toRemove = /^\/api\/peers\/([^/]+)$/.exec(path)?.[1];

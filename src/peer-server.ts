@@ -21,8 +21,6 @@ const skillWords: Record<Role, string> = {
 const peerMessage = z.object({ skill: z.enum(roleNames), input: z.unknown() });
 const HOW_TO_SEND = 'Send JSON text: { "skill": "<agent role>", "input": { ... } }. The agent card lists the agent roles.';
 
-const newPeer = z.object({ name: z.string().min(1).max(100), address: z.url(), sendKey: z.string().min(1), acceptKey: z.string().min(1) });
-
 const digest = (key: string) => createHash('sha256').update(key).digest();
 
 /**
@@ -91,7 +89,7 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
     async cancelTask() {},
   };
 
-  const allowedList = createAllowedList({ store, owner });
+  const allowedList = createAllowedList({ store, owner, peerTasksPerHour });
   let a2a: { card: AgentCard; transport: JsonRpcTransportHandler } | undefined;
 
   return {
@@ -106,14 +104,6 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
       })();
 
       if (req.method === 'GET' && path === `/${AGENT_CARD_PATH}`) return (json(200, AgentCard.toJSON(a2a.card)), true);
-
-      if (req.method === 'GET' && path === '/api/peers') return (json(200, { peers: store.peers().map(({ name, address }) => ({ name, address })) }), true);
-      if (req.method === 'POST' && path === '/api/peers') {
-        const peer = newPeer.safeParse(await readJson(req));
-        if (!peer.success) return (json(400, { error: 'a peer needs a name, an address, a sendKey and an acceptKey' }), true);
-        store.addPeer(peer.data);
-        return (json(201, { name: peer.data.name, address: peer.data.address }), true);
-      }
 
       if (req.method === 'POST' && path === '/a2a') {
         // The key is the proof of who sends. Only a key from the allowed list gets past this line.

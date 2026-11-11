@@ -188,7 +188,8 @@ test('the allowed list is in the API without the keys', async () => {
   const list = await (await fetch(`${sam.url}/api/peers`)).json();
   const bad = await fetch(`${sam.url}/api/peers`, { method: 'POST', body: JSON.stringify({ name: 'No keys', address: 'http://127.0.0.1:1' }) });
 
-  expect(list).toEqual({ peers: [{ name: 'Lou', address: expect.stringContaining('http://127.0.0.1:') }] });
+  expect((list as any).peers).toMatchObject([{ name: 'Lou', address: expect.stringContaining('http://127.0.0.1:') }]);
+  expect(JSON.stringify(list)).not.toContain('key-from');
   expect(bad.status).toBe(400);
 });
 
@@ -281,4 +282,69 @@ test('a removed peer is refused on its next request', async () => {
   expect(sam.store.peers()).toEqual([]);
   await expect(toSam.send('script', scriptInput)).rejects.toThrow('401');
   expect(sam.model.calls).toHaveLength(1);
+});
+
+test('the peers screen gets, for each peer: name, address, what it lends from its agent card, tasks in the last hour, and never a full key', async () => {
+  const { sam, lou } = await invited();
+  const toSam = await peerClient(sam.url, lou.store.peers()[0]!.sendKey);
+  await toSam.ended((await toSam.send('script', scriptInput)).id);
+  await toSam.ended((await toSam.send('trend_scout', { goal: SAMPLE_GOAL })).id);
+  sam.clock.advance(61 * 60 * 1000);
+  await toSam.ended((await toSam.send('trend_scout', { goal: SAMPLE_GOAL })).id);
+
+  const answer = await fetch(`${sam.url}/api/peers`);
+  const body = await answer.text();
+  const { sendKey, acceptKey } = sam.store.peers()[0]!;
+
+  expect(JSON.parse(body)).toEqual({
+    owner: 'Sam',
+    tasksPerHourLimit: 20,
+    peers: [
+      {
+        name: 'Lou',
+        address: lou.url,
+        lends: ['trend scout', 'script', 'reviewer', 'scheduler'],
+        tasksInLastHour: 1,
+        sendKeyEnd: sendKey.slice(-4),
+        acceptKeyEnd: acceptKey.slice(-4),
+      },
+    ],
+  });
+  expect(body).not.toContain(sendKey);
+  expect(body).not.toContain(acceptKey);
+  expect(sendKey).toHaveLength(43); // 32 random bytes; 4 characters on the screen leave 39 hidden
+});
+
+test('any A2A agent can be added by address and key; it can take work and cannot give work', async () => {
+  const sam = await startTuloy('Sam');
+  // The outside agent here is a Tuloy, because it speaks plain A2A. Sam is not on its list by an invite.
+  const agent = await startTuloy('Outside');
+  await allow(agent.url, { name: 'Sam', address: sam.url, sendKey: 'not-used', acceptKey: 'the-key-of-the-outside-agent' });
+
+  const added = await post(`${sam.url}/api/peers`, { name: 'Script helper', address: `${agent.url}/`, sendKey: 'the-key-of-the-outside-agent' });
+  const noKey = await post(`${sam.url}/api/peers`, { name: 'No key', address: agent.url });
+  const notWeb = await post(`${sam.url}/api/peers`, { name: 'Not web', address: 'file:///etc/passwd', sendKey: 'k' });
+  const list = (await (await fetch(`${sam.url}/api/peers`)).json()) as any;
+
+  expect(added.status).toBe(201);
+  expect([noKey.status, notWeb.status]).toEqual([400, 400]);
+  expect(list.peers).toEqual([
+    { name: 'Script helper', address: agent.url, lends: ['trend scout', 'script', 'reviewer', 'scheduler'], tasksInLastHour: 0, sendKeyEnd: 'gent', acceptKeyEnd: expect.any(String) },
+  ]);
+  // The key that Sam sends with is the one the owner typed, and it works at the outside agent.
+  const { sendKey, acceptKey } = sam.store.peers()[0]!;
+  const toAgent = await peerClient(agent.url, sendKey);
+  expect((await toAgent.ended((await toAgent.send('script', scriptInput)).id)).status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+  // Nobody got the key that Sam accepts from it: it is random and it left Sam's Tuloy in no answer.
+  expect(acceptKey).toHaveLength(43);
+  expect(JSON.stringify([await added.json(), list])).not.toContain(acceptKey);
+});
+
+test('an agent whose agent card cannot be read stays on the list and lends nothing that the screen can show', async () => {
+  const sam = await startTuloy('Sam');
+  await post(`${sam.url}/api/peers`, { name: 'Gone', address: 'http://127.0.0.1:1', sendKey: 'short' });
+
+  const list = (await (await fetch(`${sam.url}/api/peers`)).json()) as any;
+
+  expect(list.peers).toMatchObject([{ name: 'Gone', lends: null, sendKeyEnd: '' }]);
 });
