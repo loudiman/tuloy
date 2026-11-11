@@ -3,7 +3,7 @@ import type { z } from 'zod';
 import type { Clock } from './clock.ts';
 import { outsideText } from './outside-text.ts';
 import type { Failure } from './recovery-policy.ts';
-import { roles, type Role } from './schemas.ts';
+import { roles, skills, type Role, type Skill } from './schemas.ts';
 import type { Limits } from './settings.ts';
 
 /** The first line of the system prompt is "ROLE: <role>"; the scripted test model reads it. */
@@ -87,8 +87,8 @@ const injectedReview = ({ id }: { id: string }, i: number) =>
     : { script_id: id, verdict: 'pass', score: 8, issues: [], hints: [] };
 
 /** Tuloy checks every output with its own schema in any case. The parse also drops fields that are not in the schema. */
-export function check(role: Role, output: unknown): AgentResult {
-  const checked = (roles[role].output as z.ZodType).safeParse(output);
+export function check(role: Skill, output: unknown): AgentResult {
+  const checked = (skills[role].output as z.ZodType).safeParse(output);
   return checked.success ? { ok: true, output: checked.data } : { ok: false, failure: { kind: 'invalid_output', detail: plainIssue(checked.error.issues), raw: checked.error.message } };
 }
 

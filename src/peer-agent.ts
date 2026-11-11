@@ -1,20 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { check, type AgentResult, type RunOptions } from './agent-runner.ts';
 import type { A2aAnswer, A2aClient } from './peer-client.ts';
-import type { Role } from './schemas.ts';
+import type { Skill } from './schemas.ts';
 import type { Peer } from './store.ts';
 
-/** The name of a peer's agent as the owner reads it: "Maria's script agent". */
-export const peerAgentName = (peer: Peer, role: Role) => `${peer.name}'s ${role.replace('_', ' ')} agent`;
+/** The name of a peer's agent as the owner reads it: "Maria's script agent". The full goal goes to the peer's conductor. */
+export const peerAgentName = (peer: Peer, role: Skill) => (role === 'goal' ? `${peer.name}'s conductor` : `${peer.name}'s ${role.replace('_', ' ')} agent`);
 
 /**
  * Step 3 of the recovery order, one attempt: the same role and the same checked input go to the same agent in a peer's Tuloy.
+ * Step 4 uses it too: the skill `goal` with the goal as the input goes to the peer's conductor.
  * It sends one A2A message (`{ skill, input }` as JSON text), then polls the A2A task every `heartbeatMs` until the task time limit.
  * Each poll that the peer answers is a heartbeat. The peer's result is checked against the same schema as the owner's agent.
  * It never throws. Every way to no result is a failure: `peer_failed` (refused, failed, a question), `timeout` (the task
  * stays in work until the task time limit), `missed_heartbeat` (the peer stopped answering the polls), `invalid_output` (a bad payload).
  */
-export async function runPeerAgent(role: Role, input: unknown, peer: Peer, client: A2aClient, { clock, limits, onHeartbeat, injected }: RunOptions): Promise<AgentResult> {
+export async function runPeerAgent(role: Skill, input: unknown, peer: Peer, client: A2aClient, { clock, limits, onHeartbeat, injected }: RunOptions): Promise<AgentResult> {
   const who = peerAgentName(peer, role);
   const seconds = (ms: number) => `${Math.round(ms / 1000)}s`;
   // What the peer said goes into an event: cut it, and never with the key (the client removes it already).

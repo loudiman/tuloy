@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { PlannedTask } from './planner.ts';
-import type { Role } from './schemas.ts';
+import type { Skill } from './schemas.ts';
 
 export type RunStatus = 'running' | 'done' | 'escalated';
 export type TaskStatus =
@@ -31,7 +31,8 @@ export type Task = {
   id: string;
   title: string;
   dependsOn: string[];
-  role: Role;
+  /** An agent role, or `goal` for the one task of a full goal that a peer does. */
+  role: Skill;
   status: TaskStatus;
   /** The one agent that has the task now. Null until the first assignment. */
   agent: string | null;
@@ -54,7 +55,7 @@ export type TuloyEvent = {
 export type NewEvent = Pick<TuloyEvent, 'runId' | 'action' | 'result' | 'cause'> & { taskId?: string; data?: unknown };
 
 /** A pending injected failure. `task` is the agent role that gets it. */
-export type Injection = { id: number; task: Role; kind: string };
+export type Injection = { id: number; task: Skill; kind: string };
 
 export type Store = ReturnType<typeof openStore>;
 
@@ -74,7 +75,7 @@ export function openStore(file: string, clock: { now(): number }) {
     CREATE TABLE IF NOT EXISTS invites (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, used_at INTEGER);
   `);
   // A data file from before the peer server has no such columns.
-  for (const column of ['runs ADD COLUMN for_peer TEXT', 'tasks ADD COLUMN input TEXT']) {
+  for (const column of ['runs ADD COLUMN for_peer TEXT', 'tasks ADD COLUMN input TEXT', 'tasks ADD COLUMN version INTEGER NOT NULL DEFAULT 1']) {
     try {
       db.exec(`ALTER TABLE ${column}`);
     } catch {}
@@ -113,6 +114,18 @@ export function openStore(file: string, clock: { now(): number }) {
       );
       return runId;
     },
+    /**
+     * Stores a new version of the task graph of a run and returns its number. The tasks of the earlier versions stay in the file,
+     * and their events stay in the event log, but `tasks` gives only the newest version.
+     */
+    newTaskGraph(runId: number, tasks: PlannedTask[]): number {
+      const version = Number(db.prepare('SELECT MAX(version) AS v FROM tasks WHERE run_id = ?').get(runId)!.v) + 1;
+      const insert = db.prepare('INSERT INTO tasks (run_id, position, id, title, depends_on, role, status, input, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      tasks.forEach((t, i) =>
+        insert.run(runId, i, t.id, t.title, JSON.stringify(t.dependsOn), t.role, t.dependsOn.length ? 'waiting_on_dependency' : 'queued', t.input === undefined ? null : JSON.stringify(t.input), version),
+      );
+      return version;
+    },
     run(runId: number): Run | undefined {
       const row = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId);
       return row && toRun(row);
@@ -121,8 +134,9 @@ export function openStore(file: string, clock: { now(): number }) {
     runs(): Run[] {
       return db.prepare('SELECT * FROM runs ORDER BY id DESC').all().map(toRun);
     },
+    /** The tasks of the newest version of the run's task graph. */
     tasks(runId: number): Task[] {
-      return db.prepare('SELECT * FROM tasks WHERE run_id = ? ORDER BY position').all(runId).map(toTask);
+      return db.prepare('SELECT * FROM tasks WHERE run_id = ?1 AND version = (SELECT MAX(version) FROM tasks WHERE run_id = ?1) ORDER BY position').all(runId).map(toTask);
     },
     events(runId: number): TuloyEvent[] {
       return db.prepare('SELECT * FROM events WHERE run_id = ? ORDER BY seq').all(runId).map(toEvent);
@@ -149,7 +163,7 @@ export function openStore(file: string, clock: { now(): number }) {
       return stored;
     },
     /** Demo mode: adds a pending injection, a failure made on purpose for the next attempt of the agent with this role. */
-    addInjection(task: Role, kind: string): Injection {
+    addInjection(task: Skill, kind: string): Injection {
       return { id: Number(db.prepare('INSERT INTO injections (task, kind) VALUES (?, ?)').run(task, kind).lastInsertRowid), task, kind };
     },
     /** The pending injections, oldest first. */
@@ -160,7 +174,7 @@ export function openStore(file: string, clock: { now(): number }) {
      * Removes and returns the oldest pending injection for this role. Each injection is used one time.
      * The kinds `peer_…` are for the attempt at a peer (`forPeerStep`); all other kinds are for an attempt on an own model.
      */
-    takeInjection(task: Role, forPeerStep = false): string | undefined {
+    takeInjection(task: Skill, forPeerStep = false): string | undefined {
       const row = db.prepare(`DELETE FROM injections WHERE id = (SELECT MIN(id) FROM injections WHERE task = ? AND kind ${forPeerStep ? '' : 'NOT'} LIKE 'peer%') RETURNING kind`).get(task);
       return row?.kind as string | undefined;
     },

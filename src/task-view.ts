@@ -1,4 +1,4 @@
-import type { Role } from './schemas.ts';
+import type { Skill } from './schemas.ts';
 import type { Task, TaskStatus, TuloyEvent } from './store.ts';
 
 /** The status words that the owner reads. */
@@ -18,7 +18,7 @@ const shown: Record<TaskStatus, ShownStatus> = {
   escalated: 'escalated',
 };
 
-const agentName: Record<Role, string> = { trend_scout: 'Trend scout', script: 'Script', reviewer: 'Reviewer', scheduler: 'Scheduler' };
+const agentName: Record<Skill, string> = { trend_scout: 'Trend scout', script: 'Script', reviewer: 'Reviewer', scheduler: 'Scheduler', goal: 'Full goal' };
 
 /** What went wrong, from the event that found the failure. The key is the event's result. */
 const whatFailed: Record<string, (event: TuloyEvent) => string> = {

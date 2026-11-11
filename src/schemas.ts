@@ -49,3 +49,11 @@ export const roles = {
 } satisfies Record<string, { input: z.ZodType; output: z.ZodType }>;
 
 export type Role = keyof typeof roles;
+
+/**
+ * What a peer can ask for: one task for one agent role, or the full goal. `goal` is not an agent role: the peer's conductor
+ * does a full run and returns the scripts and the posting schedule, checked against the script and schedule schemas.
+ */
+export const skills = { ...roles, goal: { input: z.object({ goal }), output: roles.script.output.extend(roles.scheduler.output.shape) } };
+
+export type Skill = keyof typeof skills;

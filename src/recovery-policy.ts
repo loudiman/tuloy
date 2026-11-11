@@ -11,6 +11,8 @@ export type Failure = {
   onBackup?: boolean;
   /** True when the attempt was step 3: the task was with a peer's agent, or no peer could take it. The conductor sets it. */
   onPeer?: boolean;
+  /** True when the attempt was step 4: the full goal was with a peer. The conductor sets it. Such a failure also has `onPeer`. */
+  onGoal?: boolean;
 };
 
 export type Action =
@@ -20,6 +22,8 @@ export type Action =
   | { do: 'backup'; cause: string }
   /** Step 3: the same task, with the same input, to the same agent in a peer's Tuloy. */
   | { do: 'peer'; cause: string }
+  /** Step 4: the full goal to a peer, one time. The task graph gets a new version with one task. */
+  | { do: 'goal'; cause: string }
   /** Step 5. */
   | { do: 'escalate'; cause: string };
 
@@ -50,18 +54,27 @@ const rerouteToBackup: Step = (failure, history, { retries }) => {
 
 /**
  * Step 3: re-route to the same agent in a peer's Tuloy, one time. It applies when the backup model failed also.
- * A failure with `onPeer` is the result 'the peer step failed': ticket 10 puts step 4 (the full goal to a peer) after this step, for that result.
+ * A failure with `onPeer` is the result 'the peer step failed'.
  */
 const rerouteToPeer: Step = (failure, history, _limits, { forPeer, peers }) => {
   if (forPeer || peers === 0 || failure.onPeer || history.some((f) => f.onPeer)) return null;
   return { do: 'peer', cause: 'the backup model also failed' };
 };
 
-/** Step 5: end the run as escalated. It always applies. */
-const escalate: Step = (failure) => ({ do: 'escalate', cause: failure.onPeer ? 'the re-route to a peer failed' : 'the backup model also failed' });
+/**
+ * Step 4: give the full goal to a peer, one time. It applies when the peer step failed.
+ * A failure with `onGoal` is the failure of this step, so the goal is given at most one time per run.
+ */
+const giveGoalToPeer: Step = (failure, history, _limits, { forPeer, peers }) => {
+  if (forPeer || peers === 0 || failure.onGoal || !(failure.onPeer || history.some((f) => f.onPeer))) return null;
+  return { do: 'goal', cause: 'the re-route to a peer failed' };
+};
 
-/** The agreed recovery order. Step 4 (the full goal to a peer) goes before the last one. */
-const order: Step[] = [retryOwnAgent, rerouteToBackup, rerouteToPeer, escalate];
+/** Step 5: end the run as escalated. It always applies. */
+const escalate: Step = (failure) => ({ do: 'escalate', cause: failure.onGoal ? 'every path failed' : failure.onPeer ? 'the re-route to a peer failed' : 'the backup model also failed' });
+
+/** The agreed recovery order. */
+const order: Step[] = [retryOwnAgent, rerouteToBackup, rerouteToPeer, giveGoalToPeer, escalate];
 
 /**
  * The recovery policy: (failure, the earlier failures of this task in this run, whose work it is) → next action.

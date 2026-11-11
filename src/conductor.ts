@@ -6,7 +6,7 @@ import { peerAgentName, runPeerAgent } from './peer-agent.ts';
 import { createPeerClient, type A2aClient } from './peer-client.ts';
 import { planTaskGraph } from './planner.ts';
 import { nextAction, type Failure } from './recovery-policy.ts';
-import { roles, type Role } from './schemas.ts';
+import { skills, type Role } from './schemas.ts';
 import type { Limits } from './settings.ts';
 import type { Peer, Store, Task, TaskStatus } from './store.ts';
 
@@ -128,14 +128,16 @@ export function createConductor({
     }
 
     const fresh = !afterRestart && !rejection;
+    // Step 3: the peer that has the task. Step 4: the one task of the new task graph version is the full goal, and a peer's conductor has it from the start.
+    let peer: Peer | undefined = task.role === 'goal' ? store.peers()[0] : undefined;
     if (fresh) {
-      const agent = task.role;
+      const agent = peer ? peerAgentName(peer, task.role) : task.role;
       store.updateTask(runId, taskId, { agent, status: 'running' });
-      store.append({ runId, taskId, action: 'assign', cause: 'the task is ready', result: agent, data: { model: 'primary' } });
+      store.append({ runId, taskId, action: 'assign', cause: 'the task is ready', result: agent, data: peer ? { peer: peer.name } : { model: 'primary' } });
     }
 
     // The next agent gets only the checked fields of its role's input schema.
-    const input = roles[task.role].input.parse(Object.assign({ goal: run.goal }, task.input, ...deps.map((d) => d.output)));
+    const input = skills[task.role].input.parse(Object.assign({ goal: run.goal }, task.input, ...deps.map((d) => d.output)));
     const handoff = (cause: string) => deps.length && store.append({ runId, taskId, action: 'handoff', cause, result: 'checked content stored', data: { from: deps.map((d) => d.id), content: input } });
     if (fresh) handoff(`${deps.map((d) => d.id).join(', ')} done`);
     // A task that a peer's agent finished has a `reroute` event with the peer. Its output is outside text for the next agent.
@@ -158,14 +160,18 @@ export function createConductor({
     if (rejection) history.pop(); // the rejection in work now is not an earlier failure
     let output: unknown;
     // The backup model, or a peer, has the task from its `reroute` event on. After a restart or a rejection that also comes from the event log.
-    let model: 'primary' | 'backup' | 'peer' = toPeer !== undefined ? 'peer' : rerouted !== undefined ? 'backup' : 'primary';
-    // Step 3: the peer that has the task.
-    let peer: Peer | undefined;
+    let model: 'primary' | 'backup' | 'peer' = toPeer !== undefined || task.role === 'goal' ? 'peer' : rerouted !== undefined ? 'backup' : 'primary';
     let allDown: string | undefined;
     // After a restart or a rejection the first turn makes no attempt: the stop or the rejection is the failure, and recovery starts from it.
-    let stopped: Failure | null = rejection ? rejection : afterRestart ? { kind: 'missed_heartbeat', detail: 'Tuloy restarted while the task was in work' } : null;
+    let stopped: Failure | null = rejection
+      ? rejection
+      : afterRestart
+        ? { kind: 'missed_heartbeat', detail: 'Tuloy restarted while the task was in work' }
+        : task.role === 'goal' && !peer
+          ? { kind: 'peer_failed', detail: 'no peer is on the allowed list' }
+          : null;
     for (;;) {
-      const why = peer ? `re-routed to ${peerAgentName(peer, task.role)}` : model === 'backup' ? 're-routed to the backup model' : history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done';
+      const why = task.role === 'goal' ? `the full goal goes to ${task.agent ?? 'a peer'}` : peer ? `re-routed to ${peerAgentName(peer, task.role)}` : model === 'backup' ? 're-routed to the backup model' : history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done';
       if (!stopped) store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'started' });
       // Demo mode: a pending injection for this agent is used now, one time. Injections act on the primary model;
       // only an outage of all own models goes with the task to the backup model. The kinds for a peer act on the peer step.
@@ -178,15 +184,21 @@ export function createConductor({
       const heartbeat = (cause: string) => () => void store.append({ runId, taskId, action: 'heartbeat', cause, result: 'alive' });
       const result = stopped
         ? { ok: false as const, failure: stopped }
-        : peer
-          ? await runPeerAgent(task.role, input, peer, peerClient, { clock, limits, injected, onHeartbeat: heartbeat(`${peer.name}'s Tuloy answered: the task is in work`) })
-          : await withModelSlot(() => runAgent(task.role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, outside, onHeartbeat: heartbeat('the agent waits for the model') }));
+        : peer || task.role === 'goal'
+          ? await runPeerAgent(task.role, input, peer!, peerClient, {
+              clock,
+              // ponytail: the peer does a full run for a goal, so the time limit is one task time limit for each task of the template graph.
+              limits: task.role === 'goal' ? { ...limits, taskTimeLimitMs: limits.taskTimeLimitMs * planTaskGraph(run.goal).length } : limits,
+              injected,
+              onHeartbeat: heartbeat(`${peer!.name}'s Tuloy answered: the task is in work`),
+            })
+          : await withModelSlot(() => runAgent(task.role as Role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, outside, onHeartbeat: heartbeat('the agent waits for the model') }));
       stopped = null;
       if (result.ok) {
         output = result.output;
         break;
       }
-      const failure: Failure = { ...result.failure, onBackup: model === 'backup', onPeer: model === 'peer' };
+      const failure: Failure = { ...result.failure, onBackup: model === 'backup', onPeer: model === 'peer', onGoal: task.role === 'goal' };
       // The `review` event of a rejection is in the log already.
       if (failure.kind !== 'reviewer_rejection')
         store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind, data: failure.raw ? { detail: failure.raw } : undefined });
@@ -194,9 +206,29 @@ export function createConductor({
 
       const action = nextAction(failure, history, limits, { forPeer: run.forPeer !== null, peers: store.peers().length });
       if (action.do === 'escalate') {
-        store.append({ runId, taskId, action: 'escalate', cause: action.cause, result: 'escalated' });
+        // Step 5 after step 4: the cause names every path that was tried, so that the stuck reason does too.
+        const given = task.role === 'goal' ? (store.events(runId).find((e) => e.action === 'goal_to_peer')?.data as { peer: string; tried: string[] } | undefined) : undefined;
+        const cause = given ? `${action.cause}: ${[...given.tried, `the full goal to ${given.peer}`].join(', ')}` : action.cause;
+        store.append({ runId, taskId, action: 'escalate', cause, result: 'escalated' });
         store.updateTask(runId, taskId, { status: 'escalated' });
         endRun(runId, 'escalated', `${taskId} failed: ${failure.kind}`);
+        return 'escalated';
+      }
+      if (action.do === 'goal') {
+        // Step 4: the full goal goes to a peer, one time. The task graph gets a new version with one task; `drive` starts it.
+        // ponytail: the first peer of the allowed list gets it, as in step 3.
+        const to = store.peers()[0]!;
+        const tried = store.events(runId).filter((e) => e.taskId === taskId);
+        const retries = tried.filter((e) => e.action === 'retry').length;
+        const paths = [
+          `the own ${task.role.replace('_', ' ')} agent`,
+          ...(retries ? [`${retries} ${retries === 1 ? 'retry' : 'retries'}`] : []),
+          ...tried.filter((e) => e.action === 'reroute').map((e) => (e.result === 'backup model' ? 'the backup model' : e.result)),
+        ];
+        store.append({ runId, taskId, action: 'goal_to_peer', cause: action.cause, result: to.name, data: { ...action, peer: to.name, tried: paths } });
+        store.updateTask(runId, taskId, { status: 'escalated' });
+        const version = store.newTaskGraph(runId, [{ id: 'goal', title: `Give the full goal to ${to.name}`, dependsOn: [], role: 'goal' }]);
+        store.append({ runId, action: 'plan', cause: `the full goal goes to ${to.name}`, result: `task graph version ${version} stored: 1 task` });
         return 'escalated';
       }
       if (action.do === 'backup') {
@@ -225,7 +257,7 @@ export function createConductor({
 
     // A rejection is a failure of the script task. The scheduler starts only after a pass.
     if (task.role === 'reviewer') {
-      const { reviews } = output as z.infer<typeof roles.reviewer.output>;
+      const { reviews } = output as z.infer<typeof skills.reviewer.output>;
       const rejected = reviews.filter((r) => r.verdict === 'reject');
       const scriptTask = deps.find((d) => d.role === 'script');
       const scriptTaskId = scriptTask?.id ?? taskId;
