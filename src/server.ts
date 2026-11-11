@@ -9,7 +9,7 @@ import type { Store } from './store.ts';
 import { taskViews } from './task-view.ts';
 
 /** The injection kinds that are built. The other kinds of the shared contract answer 400 until their ticket builds them. */
-const injectionKinds = ['timeout', 'invalid_output'];
+const injectionKinds = ['timeout', 'invalid_output', 'primary_outage', 'all_models_outage'];
 
 const file = (path: string) => new URL(path, import.meta.url);
 const font = (name: string) => file(`../node_modules/@fontsource-variable/${name}`);

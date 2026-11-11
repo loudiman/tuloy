@@ -104,7 +104,7 @@ test('an output that never matches its schema never becomes the next agent input
   expect(store.events(runId).some((e) => e.taskId === 'review')).toBe(false);
 });
 
-test('a model that fails ends the run as escalated', async () => {
+test('a model that fails, with a backup model that fails also, ends the run as escalated', async () => {
   const { conductor, store } = testTuloy({ script: { trend_scout: [new Error('[model down]')] } });
 
   const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
@@ -113,7 +113,7 @@ test('a model that fails ends the run as escalated', async () => {
   expect(store.run(runId)?.status).toBe('escalated');
   expect(store.events(runId).slice(-3)).toMatchObject([
     { taskId: 'trends', action: 'model_call', result: 'model_unavailable', cause: '[model down]' },
-    { taskId: 'trends', action: 'escalate', result: 'escalated', cause: 'a model outage is not retried' },
+    { taskId: 'trends', action: 'escalate', result: 'escalated', cause: 'the backup model also failed' },
     { taskId: null, action: 'end', result: 'escalated' },
   ]);
 });
@@ -200,7 +200,7 @@ test('run state and events are still there after a restart of the program', asyn
 
 test('the cause of an invalid output is a plain sentence, and the raw detail stays in the event data', async () => {
   const wrongLanguage = { scripts: [{ id: 's1', hook: 'A hook', body: 'A body', cta: 'A CTA', language: 'klingon' }] };
-  const { conductor, store } = testTuloy({ script: { script: [{ scripts: 'junk' }, {}, wrongLanguage] } });
+  const { conductor, store } = testTuloy({ script: { script: [{ scripts: 'junk' }, {}, wrongLanguage] }, backupScript: {} });
 
   const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
   await ended;

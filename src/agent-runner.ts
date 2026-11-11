@@ -23,7 +23,10 @@ export type RunOptions = {
   limits: Pick<Limits, 'taskTimeLimitMs' | 'heartbeatMs' | 'heartbeatMissedMs' | 'maxOutputTokens'>;
   /** Called for each heartbeat that the agent sends while it waits for the model. */
   onHeartbeat?: () => void;
-  /** Demo mode: `timeout` makes the agent silent (no model call, no heartbeat); `invalid_output` makes its output fail the schema. */
+  /**
+   * Demo mode: `timeout` makes the agent silent (no model call, no heartbeat); `invalid_output` makes its output fail the schema;
+   * `primary_outage` and `all_models_outage` make the attempt fail as a model outage, with no model call.
+   */
   injected?: string;
 };
 
@@ -57,7 +60,9 @@ export async function runAgent(role: Role, input: unknown, model: LanguageModel,
     ? new Promise<never>(() => {})
     : injected === 'invalid_output'
       ? Promise.resolve(check(role, { injected: 'an output that does not match the schema' }))
-      : callModel(role, input, model, stop.signal, clock, limits.maxOutputTokens);
+      : injected === 'primary_outage' || injected === 'all_models_outage'
+        ? Promise.resolve(fail('model_unavailable', `demo: injected outage of ${injected === 'primary_outage' ? 'the primary model' : 'all own models'}`))
+        : callModel(role, input, model, stop.signal, clock, limits.maxOutputTokens);
   try {
     return await Promise.race([answer, watch()]);
   } finally {

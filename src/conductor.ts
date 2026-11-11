@@ -13,7 +13,7 @@ export type Conductor = ReturnType<typeof createConductor>;
 /**
  * The conductor owns a run from the goal to its end. Read what it did from the store: the task rows and the event log.
  * Recovery: a failed or stalled task goes to the recovery policy; the conductor does the action that the policy returns.
- * ponytail: in one run, tasks start one at a time (the template graph never has two ready tasks). Runs go side by side. The backup model is not used yet.
+ * ponytail: in one run, tasks start one at a time (the template graph never has two ready tasks). Runs go side by side.
  */
 export function createConductor({ store, models, clock, limits }: { store: Store; models: { primary: LanguageModel; backup: LanguageModel }; clock: Clock; limits: Limits }) {
   // At most `limits.maxModelCalls` agents run at the same time, over all runs of this Tuloy. The others wait in line.
@@ -116,25 +116,30 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     }
     // One turn of this loop is one attempt. The earlier failures of the task are the history for the recovery policy.
     // After a restart they come from the event log, so that a restart does not give the task new retries.
-    const history: Failure[] = !afterRestart
-      ? []
-      : store
-          .events(runId)
-          .filter((e) => e.taskId === taskId && e.result in failureAction && e.action === failureAction[e.result as Failure['kind']])
-          .map((e) => ({ kind: e.result as Failure['kind'], detail: e.cause }));
+    const mine = afterRestart ? store.events(runId).filter((e) => e.taskId === taskId) : [];
+    const rerouted = mine.findLast((e) => e.action === 'reroute')?.seq;
+    const history: Failure[] = mine
+      .filter((e) => e.result in failureAction && e.action === failureAction[e.result as Failure['kind']])
+      .map((e) => ({ kind: e.result as Failure['kind'], detail: e.cause, onBackup: rerouted !== undefined && e.seq > rerouted }));
     let output: unknown;
+    // The backup model is in use from the `reroute` event on. After a restart that also comes from the event log.
+    let model: 'primary' | 'backup' = rerouted !== undefined ? 'backup' : 'primary';
+    let allDown: string | undefined;
     // After a restart the first turn makes no attempt: the stop is the failure, and recovery starts from it.
     let stopped: Failure | null = afterRestart ? { kind: 'missed_heartbeat', detail: 'Tuloy restarted while the task was in work' } : null;
     for (;;) {
-      if (!stopped) store.append({ runId, taskId, action: 'dispatch', cause: history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done', result: 'started' });
-      // Demo mode: a pending injection for this agent is used now, one time.
-      const injected = stopped ? undefined : store.takeInjection(task.role);
-      if (injected) store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
+      const why = model === 'backup' ? 're-routed to the backup model' : history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done';
+      if (!stopped) store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'started' });
+      // Demo mode: a pending injection for this agent is used now, one time. Injections act on the primary model;
+      // only an outage of all own models goes with the task to the backup model.
+      const injected = stopped ? undefined : model === 'primary' ? store.takeInjection(task.role) : allDown;
+      if (injected === 'all_models_outage') allDown = injected;
+      if (injected && model === 'primary') store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
       // The time limit starts when the agent has its slot, not while it waits in line.
       const result = stopped
         ? { ok: false as const, failure: stopped }
         : await withModelSlot(() =>
-        runAgent(task.role, input, models.primary, {
+        runAgent(task.role, input, models[model], {
           clock,
           limits,
           injected,
@@ -146,7 +151,7 @@ export function createConductor({ store, models, clock, limits }: { store: Store
         output = result.output;
         break;
       }
-      const { failure } = result;
+      const failure: Failure = { ...result.failure, onBackup: model === 'backup' };
       store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind, data: failure.raw ? { detail: failure.raw } : undefined });
       store.updateTask(runId, taskId, { status: failedStatus[failure.kind] });
 
@@ -157,9 +162,15 @@ export function createConductor({ store, models, clock, limits }: { store: Store
         endRun(runId, 'escalated', `${taskId} failed: ${failure.kind}`);
         return 'escalated';
       }
-      store.append({ runId, taskId, action: 'retry', cause: failure.kind, result: 'waiting', data: action });
-      await clock.sleep(action.waitMs);
-      if (store.run(runId)?.status !== 'running') return 'escalated';
+      if (action.do === 'backup') {
+        // Step 2: the same checked input goes to the backup model. The switch is one event.
+        store.append({ runId, taskId, action: 'reroute', cause: action.cause, result: 'backup model', data: action });
+        model = 'backup';
+      } else {
+        store.append({ runId, taskId, action: 'retry', cause: failure.kind, result: 'waiting', data: action });
+        await clock.sleep(action.waitMs);
+        if (store.run(runId)?.status !== 'running') return 'escalated';
+      }
       history.push(failure);
       store.updateTask(runId, taskId, { status: 'recovering' });
     }

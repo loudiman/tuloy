@@ -7,11 +7,15 @@ export type Failure = {
   raw?: string;
   /** Only for `rate_limited`: the wait that the model asked for. */
   retryAfterMs?: number;
+  /** True when the attempt ran on the owner's backup model. The conductor sets it. */
+  onBackup?: boolean;
 };
 
 export type Action =
   /** Step 1: `retry` 1 is the first retry; `of` is the hard limit. */
   | { do: 'retry'; retry: number; of: number; waitMs: number }
+  /** Step 2: the same task, with the same input, on the owner's backup model. `cause` says why the primary model is left. */
+  | { do: 'backup'; cause: string }
   /** Step 5. */
   | { do: 'escalate'; cause: string };
 
@@ -22,20 +26,26 @@ type Step = (failure: Failure, history: Failure[], limits: RetryLimits) => Actio
 
 /** Step 1: retry the owner's own agent, with a longer wait each time, up to the limit. A known model outage skips this step. */
 const retryOwnAgent: Step = (failure, history, { retries, retryWaitMs }) => {
-  if (failure.kind === 'model_unavailable' || history.length >= retries) return null;
+  if (failure.kind === 'model_unavailable' || failure.onBackup || history.length >= retries) return null;
   const waitMs = retryWaitMs * 2 ** history.length;
   // A rate-limit answer is honoured: the wait is never shorter than the model asked for.
   return { do: 'retry', retry: history.length + 1, of: retries, waitMs: Math.max(waitMs, failure.retryAfterMs ?? 0) };
 };
 
-/** Step 5: end the run as escalated. It always applies. */
-const escalate: Step = (failure, history, { retries }) => ({
-  do: 'escalate',
-  cause: failure.kind === 'model_unavailable' ? 'a model outage is not retried' : `${history.length} of ${retries} retries used`,
-});
+/** Step 2: re-route to the owner's backup model, one time. The backup model gets one attempt. */
+const rerouteToBackup: Step = (failure, history, { retries }) => {
+  if (failure.onBackup || history.some((f) => f.onBackup)) return null;
+  return { do: 'backup', cause: failure.kind === 'model_unavailable' ? 'primary outage' : `${history.length} of ${retries} retries used` };
+};
 
-/** The agreed recovery order. Steps 2 (backup model), 3 (a peer's agent) and 4 (the full goal to a peer) go between these two. */
-const order: Step[] = [retryOwnAgent, escalate];
+/**
+ * Step 5: end the run as escalated. It always applies.
+ * Today it is reached only when the backup model failed also. Ticket 9 puts the peer steps before it.
+ */
+const escalate: Step = () => ({ do: 'escalate', cause: 'the backup model also failed' });
+
+/** The agreed recovery order. Steps 3 (a peer's agent) and 4 (the full goal to a peer) go between these two. */
+const order: Step[] = [retryOwnAgent, rerouteToBackup, escalate];
 
 /**
  * The recovery policy: (failure, the earlier failures of this task in this run) → next action.
