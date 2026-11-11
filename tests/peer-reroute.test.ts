@@ -135,3 +135,46 @@ test('with an empty allowed list the peer step is passed at once, with no call, 
   expect(stuckReason(tuloy, runId)).toBe('Script task failed: the model is not available (503 model down). The backup model also failed. The run ended as escalated.');
   expect(peer.calls).toEqual([]);
 });
+
+test('each poll that the peer answers is a heartbeat; a silent peer reaches the task time limit, and the run ends as escalated', async () => {
+  const tuloy = ownModelsDown({ peer: [working] });
+  const { conductor, store, peer } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  const events = scriptsEvents(tuloy, runId);
+  const rerouted = events.find((e) => e.result === "Maria's script agent")!;
+  const beats = events.filter((e) => e.action === 'heartbeat');
+  // One poll each 5 s: the heartbeats are at 5 s, 10 s, … 55 s. At 60 s the time limit ends the attempt.
+  expect(beats.map((e) => (e.time - rerouted.time) / 1000)).toEqual([5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
+  expect(beats[0]).toMatchObject({ cause: "Maria's Tuloy answered: the task is in work", result: 'alive' });
+  expect(events.slice(-2).map((e) => [e.action, e.result, e.cause, e.time - rerouted.time])).toEqual([
+    ['watch', 'timeout', "Maria's script agent gave no result in 60s", 60_000],
+    ['escalate', 'escalated', 'the re-route to a peer failed', 60_000],
+  ]);
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(stuckReason(tuloy, runId)).toBe("Script task stalled: Maria's script agent gave no result in 60s. The re-route to a peer failed. The run ended as escalated.");
+  // The peer is told to stop the task that nobody waits for.
+  expect(peer.calls.map((c) => c.move)).toEqual(['send', ...Array(11).fill('read'), 'cancel']);
+});
+
+test('a peer that stops answering the polls sends no heartbeat, and is found after the missed-heartbeat time', async () => {
+  const gone: A2aAnswer = { status: 'failed', failure: 'unreachable', text: 'The outside agent could not be reached.', taskId: null, contextId: null };
+  const tuloy = ownModelsDown({ peer: [working, working, gone] });
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  const events = scriptsEvents(tuloy, runId);
+  const rerouted = events.find((e) => e.result === "Maria's script agent")!;
+  // The one answered poll is at 5 s. No answer for 20 s after it: found at 25 s, long before the time limit.
+  expect(events.slice(-4).map((e) => [e.action, e.result, e.cause, e.time - rerouted.time])).toEqual([
+    ['dispatch', 'started', "re-routed to Maria's script agent", 0],
+    ['heartbeat', 'alive', "Maria's Tuloy answered: the task is in work", 5000],
+    ['watch', 'missed_heartbeat', "Maria's Tuloy did not answer for 20s", 25_000],
+    ['escalate', 'escalated', 'the re-route to a peer failed', 25_000],
+  ]);
+  expect(store.run(runId)?.status).toBe('escalated');
+});
