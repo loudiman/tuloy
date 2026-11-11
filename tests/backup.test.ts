@@ -1,4 +1,7 @@
+import { mkdtempSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { createServer } from '../src/server.ts';
 import { SAMPLE_GOAL } from '../src/planner.ts';
@@ -220,4 +223,23 @@ test('in demo mode the injection API takes an outage of the primary model and an
     server.closeAllConnections();
     server.close();
   }
+});
+
+test('after a restart, a task that was on the backup model does not go back to the primary model', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
+  const first = testTuloy({ file, script: { script: [new Error('503 primary down')] }, backupScript: {} });
+  // The program stops when the backup model has the task: the second dispatch of the scripts task.
+  let dispatches = 0;
+  first.store.subscribe((e) => e.taskId === 'scripts' && e.action === 'dispatch' && ++dispatches === 2 && first.store.close());
+  const { runId, ended } = first.conductor.startRun(SAMPLE_GOAL);
+  await ended.catch(() => {}); // the stopped conductor dies on the closed store
+
+  const tuloy = testTuloy({ file });
+  await tuloy.conductor.continueRuns()[0].ended;
+
+  // The stop is the failure of the one attempt of the backup model. The primary model is not called again.
+  expect(trail(tuloy, runId, 'scripts').slice(-4)).toEqual(['reroute backup model', 'dispatch started', 'watch missed_heartbeat', 'escalate escalated']);
+  expect(tuloy.store.events(runId).find((e) => e.action === 'escalate')?.cause).toBe('the backup model also failed');
+  expect([tuloy.model.calls, tuloy.backup.calls]).toEqual([[], []]);
+  expect(tuloy.store.run(runId)?.status).toBe('escalated');
 });

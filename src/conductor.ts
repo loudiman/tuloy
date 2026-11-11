@@ -50,8 +50,26 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     return { runId, ended: drive(runId) };
   }
 
-  async function drive(runId: number): Promise<void> {
+  /**
+   * Continues every run that was not finished when Tuloy stopped. Call it one time at start-up, before new work comes in.
+   * A task that was in the middle of its work at the stop is treated as stalled and goes through recovery. Done tasks are not run again.
+   */
+  function continueRuns(): { runId: number; ended: Promise<void> }[] {
+    return store
+      .runs()
+      .filter((run) => run.status === 'running')
+      .reverse()
+      .map((run) => {
+        store.append({ runId: run.id, action: 'restart', cause: 'Tuloy started again before this run ended', result: 'continued' });
+        return { runId: run.id, ended: drive(run.id, true) };
+      });
+  }
+
+  async function drive(runId: number, afterRestart = false): Promise<void> {
     try {
+      if (afterRestart) {
+        for (const task of store.tasks(runId)) if (!isWaiting(task.status) && task.status !== 'done') await startTask(runId, task.id, true);
+      }
       while (store.run(runId)?.status === 'running') {
         const tasks = store.tasks(runId);
         const next = tasks.find((t) => isWaiting(t.status) && t.dependsOn.every((d) => tasks.find((x) => x.id === d)?.status === 'done'));
@@ -72,43 +90,55 @@ export function createConductor({ store, models, clock, limits }: { store: Store
    * Starts one task now and resolves when the task has ended. The conductor uses this for every start.
    * A start is rejected, with an event, when a task it depends on is not done, when the task is not waiting, or when the run has ended.
    */
-  async function startTask(runId: number, taskId: string): Promise<'done' | 'rejected' | 'escalated'> {
+  async function startTask(runId: number, taskId: string, afterRestart = false): Promise<'done' | 'rejected' | 'escalated'> {
     const run = store.run(runId);
     const tasks = store.tasks(runId);
     const task = tasks.find((t) => t.id === taskId);
     if (!run || !task) throw new Error(`no task ${taskId} in run ${runId}`);
     const deps = task.dependsOn.map((id) => tasks.find((t) => t.id === id)!);
     const notDone = deps.filter((d) => d.status !== 'done').map((d) => d.id);
-    const why = notDone.length ? `it depends on ${notDone.join(', ')}, not done yet` : !isWaiting(task.status) ? `the task is ${task.status}` : run.status !== 'running' ? `the run is ${run.status}` : null;
+    const why = notDone.length ? `it depends on ${notDone.join(', ')}, not done yet` : !isWaiting(task.status) && !afterRestart ? `the task is ${task.status}` : run.status !== 'running' ? `the run is ${run.status}` : null;
     if (why) {
       store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'rejected' });
       return 'rejected';
     }
 
-    const agent = task.role;
-    store.updateTask(runId, taskId, { agent, status: 'running' });
-    store.append({ runId, taskId, action: 'assign', cause: 'the task is ready', result: agent, data: { model: 'primary' } });
+    if (!afterRestart) {
+      const agent = task.role;
+      store.updateTask(runId, taskId, { agent, status: 'running' });
+      store.append({ runId, taskId, action: 'assign', cause: 'the task is ready', result: agent, data: { model: 'primary' } });
+    }
 
     // The next agent gets only the checked fields of its role's input schema.
     const input = roles[task.role].input.parse(Object.assign({ goal: run.goal }, task.input, ...deps.map((d) => d.output)));
-    if (deps.length) {
+    if (deps.length && !afterRestart) {
       store.append({ runId, taskId, action: 'handoff', cause: `${deps.map((d) => d.id).join(', ')} done`, result: 'checked content stored', data: { from: deps.map((d) => d.id), content: input } });
     }
     // One turn of this loop is one attempt. The earlier failures of the task are the history for the recovery policy.
-    const history: Failure[] = [];
+    // After a restart they come from the event log, so that a restart does not give the task new retries.
+    const mine = afterRestart ? store.events(runId).filter((e) => e.taskId === taskId) : [];
+    const rerouted = mine.findLast((e) => e.action === 'reroute')?.seq;
+    const history: Failure[] = mine
+      .filter((e) => e.result in failureAction && e.action === failureAction[e.result as Failure['kind']])
+      .map((e) => ({ kind: e.result as Failure['kind'], detail: e.cause, onBackup: rerouted !== undefined && e.seq > rerouted }));
     let output: unknown;
-    let model: 'primary' | 'backup' = 'primary';
+    // The backup model is in use from the `reroute` event on. After a restart that also comes from the event log.
+    let model: 'primary' | 'backup' = rerouted !== undefined ? 'backup' : 'primary';
     let allDown: string | undefined;
+    // After a restart the first turn makes no attempt: the stop is the failure, and recovery starts from it.
+    let stopped: Failure | null = afterRestart ? { kind: 'missed_heartbeat', detail: 'Tuloy restarted while the task was in work' } : null;
     for (;;) {
       const why = model === 'backup' ? 're-routed to the backup model' : history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done';
-      store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'started' });
+      if (!stopped) store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'started' });
       // Demo mode: a pending injection for this agent is used now, one time. Injections act on the primary model;
       // only an outage of all own models goes with the task to the backup model.
-      const injected = model === 'primary' ? store.takeInjection(task.role) : allDown;
+      const injected = stopped ? undefined : model === 'primary' ? store.takeInjection(task.role) : allDown;
       if (injected === 'all_models_outage') allDown = injected;
       if (injected && model === 'primary') store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
       // The time limit starts when the agent has its slot, not while it waits in line.
-      const result = await withModelSlot(() =>
+      const result = stopped
+        ? { ok: false as const, failure: stopped }
+        : await withModelSlot(() =>
         runAgent(task.role, input, models[model], {
           clock,
           limits,
@@ -116,6 +146,7 @@ export function createConductor({ store, models, clock, limits }: { store: Store
           onHeartbeat: () => store.append({ runId, taskId, action: 'heartbeat', cause: 'the agent waits for the model', result: 'alive' }),
         }),
       );
+      stopped = null;
       if (result.ok) {
         output = result.output;
         break;
@@ -162,7 +193,7 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     return 'done';
   }
 
-  return { startRun, startPeerTask, startTask };
+  return { startRun, startPeerTask, startTask, continueRuns };
 }
 
 const isWaiting = (status: string) => status === 'queued' || status === 'waiting_on_dependency';
