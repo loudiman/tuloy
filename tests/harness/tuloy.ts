@@ -14,6 +14,6 @@ export function testTuloy(options: { script?: Partial<Record<Role, Step[]>>; fil
   const clock = fakeClock();
   const store = openStore(options.file ?? ':memory:', clock);
   const model = scriptedModel(options.script);
-  const conductor = createConductor({ store, clock, models: { primary: model, backup: model } });
+  const conductor = createConductor({ store, models: { primary: model, backup: model } });
   return { clock, store, model, conductor };
 }
