@@ -157,6 +157,10 @@ export function openStore(file: string, clock: Clock) {
     peers(): Peer[] {
       return db.prepare('SELECT * FROM peers ORDER BY name').all().map((r: Row) => ({ name: r.name, address: r.address, sendKey: r.send_key, acceptKey: r.accept_key }));
     },
+    /** How many runs this Tuloy started for the peer in the last hour. */
+    peerRunsInLastHour(name: string): number {
+      return Number(db.prepare('SELECT COUNT(*) AS n FROM runs WHERE for_peer = ? AND started_at > ?').get(name, clock.now() - 60 * 60 * 1000)!.n);
+    },
     close() {
       db.close();
     },

@@ -14,9 +14,9 @@ afterEach(() => {
 });
 
 /** One real Tuloy on a free port, with the scripted model. */
-async function startTuloy(owner: string, options: Parameters<typeof testTuloy>[0] = {}) {
+async function startTuloy(owner: string, options: Parameters<typeof testTuloy>[0] & { peerTasksPerHour?: number } = {}) {
   const tuloy = testTuloy(options);
-  const server = createServer({ store: tuloy.store, conductor: tuloy.conductor, owner });
+  const server = createServer({ store: tuloy.store, conductor: tuloy.conductor, owner, peerTasksPerHour: options.peerTasksPerHour });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   stops.push(() => {
     server.closeAllConnections();
@@ -63,7 +63,7 @@ const text = (task: Task) =>
 const scriptInput = { goal: SAMPLE_GOAL, trends: (goodOutput.trend_scout as any).trends };
 
 /** Sam and Lou, each on the other's allowed list. */
-async function twoPeers(samOptions: Parameters<typeof testTuloy>[0] = {}) {
+async function twoPeers(samOptions: Parameters<typeof startTuloy>[1] = {}) {
   const sam = await startTuloy('Sam', samOptions);
   const lou = await startTuloy('Lou');
   await allow(sam.url, { name: 'Lou', address: lou.url, sendKey: 'key-from-sam', acceptKey: 'key-from-lou' });
@@ -119,6 +119,22 @@ test('the input from the peer is checked against the input schema of the role be
   expect(noSuchRole.status?.state).toBe(TaskState.TASK_STATE_REJECTED);
   expect(sam.model.calls).toEqual([]);
   expect(sam.store.runs()).toEqual([]);
+});
+
+test('past the limit of tasks per hour for a peer, the next task is rejected; an hour later the peer can send again', async () => {
+  const { sam } = await twoPeers({ peerTasksPerHour: 2 });
+  const lou = await peerClient(sam.url, 'key-from-lou');
+  const state = async () => (await lou.ended((await lou.send('trend_scout', { goal: SAMPLE_GOAL })).id)).status?.state;
+
+  expect([await state(), await state()]).toEqual([TaskState.TASK_STATE_COMPLETED, TaskState.TASK_STATE_COMPLETED]);
+  const third = await lou.send('trend_scout', { goal: SAMPLE_GOAL });
+
+  expect(third.status?.state).toBe(TaskState.TASK_STATE_REJECTED);
+  expect(text(third)).toContain('2 tasks per hour');
+  expect(sam.model.calls).toHaveLength(2);
+
+  sam.clock.advance(60 * 60 * 1000);
+  expect(await state()).toBe(TaskState.TASK_STATE_COMPLETED);
 });
 
 test('the agent card is at the well-known address and lists a skill for each agent role', async () => {

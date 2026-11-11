@@ -28,7 +28,7 @@ const digest = (key: string) => createHash('sha256').update(key).digest();
  * The peer server: the allowed list API, the agent card and the A2A endpoint of one Tuloy.
  * `handle` answers false when the request is not for it.
  */
-export function createPeerServer({ store, conductor, owner }: { store: Store; conductor: Conductor; owner: string }) {
+export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: { store: Store; conductor: Conductor; owner: string; peerTasksPerHour: number }) {
   const card = (address: string) =>
     AgentCard.fromJSON({
       name: `Tuloy of ${owner}`,
@@ -66,6 +66,7 @@ export function createPeerServer({ store, conductor, owner }: { store: Store; co
       const role = message.data.skill;
       const input = roles[role].input.safeParse(message.data.input);
       if (!input.success) return begin('TASK_STATE_REJECTED', `The input does not match the input schema of the ${role} agent: ${z.prettifyError(input.error)}`);
+      if (store.peerRunsInLastHour(peer) >= peerTasksPerHour) return begin('TASK_STATE_REJECTED', `${peer} is at the limit of ${peerTasksPerHour} tasks per hour.`);
 
       begin('TASK_STATE_WORKING');
       const { runId, ended } = conductor.startPeerTask(peer, role, input.data);
