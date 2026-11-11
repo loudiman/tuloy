@@ -80,8 +80,8 @@ export const goodOutput: Record<Role, unknown> = {
   },
   reviewer: {
     reviews: [
-      { script_id: 's1', verdict: 'pass', issues: [] },
-      { script_id: 's2', verdict: 'pass', issues: [] },
+      { script_id: 's1', verdict: 'pass', score: 8, issues: [], hints: [] },
+      { script_id: 's2', verdict: 'pass', score: 9, issues: [], hints: [] },
     ],
   },
   scheduler: {

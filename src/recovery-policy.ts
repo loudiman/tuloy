@@ -1,6 +1,6 @@
 /** The typed failures of one attempt of an agent. */
 export type Failure = {
-  kind: 'timeout' | 'missed_heartbeat' | 'invalid_output' | 'model_unavailable' | 'rate_limited';
+  kind: 'timeout' | 'missed_heartbeat' | 'invalid_output' | 'model_unavailable' | 'rate_limited' | 'reviewer_rejection';
   /** Plain words for the event log. */
   detail: string;
   /** Only for `rate_limited`: the wait that the model asked for. */
