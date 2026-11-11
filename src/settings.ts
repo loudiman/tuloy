@@ -18,6 +18,8 @@ export function readSettings(env: Record<string, string | undefined>) {
       heartbeatMs: Number(env.TULOY_HEARTBEAT_MS || 5000),
       /** With no heartbeat for this long, the agent is stalled. */
       heartbeatMissedMs: Number(env.TULOY_HEARTBEAT_MISSED_MS || 20_000),
+      /** At most this number of model calls run at the same time, over all runs. */
+      maxModelCalls: Number(env.TULOY_MAX_MODEL_CALLS || 2),
     },
   };
 }

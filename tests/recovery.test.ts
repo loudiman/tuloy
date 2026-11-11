@@ -1,7 +1,7 @@
 import { APICallError } from 'ai';
 import { expect, test } from 'vitest';
 import { SAMPLE_GOAL } from '../src/planner.ts';
-import { goodOutput, hang } from './harness/scripted-model.ts';
+import { goodOutput, hang, slow } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
 type Tuloy = ReturnType<typeof testTuloy>;
@@ -160,4 +160,22 @@ test('a rate-limit answer from the model is honoured: the retry waits as long as
   expect(events.map((e) => `${e.action} ${e.result}`).slice(2, 6)).toEqual(['dispatch started', 'model_call rate_limited', 'retry waiting', 'dispatch started']);
   expect(events[4]).toMatchObject({ cause: 'rate_limited', data: { retry: 1, of: 2, waitMs: 7000 } });
   expect(events[5]).toMatchObject({ time: start + 7000 });
+});
+
+test('at most 2 model calls run at the same time', async () => {
+  const { conductor, store, model } = testTuloy({ script: { trend_scout: [slow(1000), slow(1000), slow(1000)] } });
+
+  const runs = [conductor.startRun(SAMPLE_GOAL), conductor.startRun(SAMPLE_GOAL), conductor.startRun(SAMPLE_GOAL)];
+  await Promise.all(runs.map((r) => r.ended));
+
+  expect(runs.map((r) => store.run(r.runId)?.status)).toEqual(['done', 'done', 'done']);
+  expect(model.most.atTheSameTime).toBe(2);
+});
+
+test('the limit on model calls at the same time is a setting', async () => {
+  const { conductor, model } = testTuloy({ script: { trend_scout: [slow(1000), slow(1000), slow(1000)] }, limits: { maxModelCalls: 3 } });
+
+  await Promise.all([1, 2, 3].map(() => conductor.startRun(SAMPLE_GOAL).ended));
+
+  expect(model.most.atTheSameTime).toBe(3);
 });

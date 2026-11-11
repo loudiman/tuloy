@@ -13,9 +13,24 @@ export type Conductor = ReturnType<typeof createConductor>;
 /**
  * The conductor owns a run from the goal to its end. Read what it did from the store: the task rows and the event log.
  * Recovery: a failed or stalled task goes to the recovery policy; the conductor does the action that the policy returns.
- * ponytail: tasks run one at a time. The backup model is not used yet.
+ * ponytail: in one run, tasks start one at a time (the template graph never has two ready tasks). Runs go side by side. The backup model is not used yet.
  */
 export function createConductor({ store, models, clock, limits }: { store: Store; models: { primary: LanguageModel; backup: LanguageModel }; clock: Clock; limits: Limits }) {
+  // At most `limits.maxModelCalls` agents run at the same time, over all runs of this Tuloy. The others wait in line.
+  let freeSlots = limits.maxModelCalls;
+  const line: (() => void)[] = [];
+  async function withModelSlot<T>(work: () => Promise<T>): Promise<T> {
+    if (freeSlots > 0) freeSlots--;
+    else await new Promise<void>((resolve) => line.push(resolve));
+    try {
+      return await work();
+    } finally {
+      const next = line.shift();
+      if (next) next(); // the slot goes directly to the next in line
+      else freeSlots++;
+    }
+  }
+
   /** Stores the task graph and starts the run. `ended` resolves when the run is done or escalated; it never rejects. */
   function startRun(goal: string): { runId: number; ended: Promise<void> } {
     const tasks = planTaskGraph(goal);
@@ -76,12 +91,15 @@ export function createConductor({ store, models, clock, limits }: { store: Store
       // Demo mode: a pending injection for this agent is used now, one time.
       const injected = store.takeInjection(task.role);
       if (injected) store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
-      const result = await runAgent(task.role, input, models.primary, {
-        clock,
-        limits,
-        injected,
-        onHeartbeat: () => store.append({ runId, taskId, action: 'heartbeat', cause: 'the agent waits for the model', result: 'alive' }),
-      });
+      // The time limit starts when the agent has its slot, not while it waits in line.
+      const result = await withModelSlot(() =>
+        runAgent(task.role, input, models.primary, {
+          clock,
+          limits,
+          injected,
+          onHeartbeat: () => store.append({ runId, taskId, action: 'heartbeat', cause: 'the agent waits for the model', result: 'alive' }),
+        }),
+      );
       if (result.ok) {
         output = result.output;
         break;

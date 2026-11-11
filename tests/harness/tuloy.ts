@@ -45,7 +45,7 @@ export function fakeClock(start = Date.parse('2026-11-12T09:00:00+08:00')): Cloc
 export function testTuloy(options: { script?: Partial<Record<Role, Step[]>>; file?: string; limits?: Partial<Limits> } = {}) {
   const clock = fakeClock();
   const store = openStore(options.file ?? ':memory:', clock);
-  const model = scriptedModel(options.script);
+  const model = scriptedModel(options.script, clock);
   const conductor = createConductor({ store, models: { primary: model, backup: model }, clock, limits: { ...defaultLimits, ...options.limits } });
   return { clock, store, model, conductor };
 }
