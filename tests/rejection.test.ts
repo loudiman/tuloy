@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { SAMPLE_GOAL } from '../src/planner.ts';
+import { taskViews } from '../src/task-view.ts';
 import { goodOutput } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
@@ -79,4 +80,32 @@ test('a script that is still rejected when the retries are used is never schedul
   // A rejection has a verdict, a score and a list of issues.
   expect(store.events(runId).filter((e) => e.action === 'review').map((e) => (e.data as typeof rejection).reviews[0])).toEqual(Array(3).fill(rejection.reviews[0]));
   expect(store.events(runId).some((e) => e.taskId === 'schedule')).toBe(false);
+});
+
+test('the stuck reason names the rejection and its main issue, and what the conductor does about it', async () => {
+  const tuloy = testTuloy({ script: { reviewer: [rejection, rejection, rejection] } });
+  const { conductor, store } = tuloy;
+  /** The stuck reason and shown status of the script task, read at each recovery event. */
+  const seen: (string | null)[][] = [];
+  store.subscribe((e) => {
+    if (e.taskId !== 'scripts' || !['retry', 'dispatch', 'escalate'].includes(e.action)) return;
+    const view = taskViews(store.tasks(e.runId), store.events(e.runId)).find((t) => t.id === 'scripts')!;
+    seen.push([`${e.action} ${e.result}`, view.shownStatus, view.stuckReason]);
+  });
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(seen).toEqual([
+    ['dispatch started', 'running', null],
+    ['retry waiting', 'stalled', 'Script task rejected by the reviewer: The hook is weak. Retry 1 of 2 in 2s.'],
+    ['dispatch started', 'recovering', 'Script task rejected by the reviewer: The hook is weak. Retry 1 of 2 is running.'],
+    ['retry waiting', 'stalled', 'Script task rejected by the reviewer: The hook is weak. Retry 2 of 2 in 4s.'],
+    ['dispatch started', 'recovering', 'Script task rejected by the reviewer: The hook is weak. Retry 2 of 2 is running.'],
+    ['escalate escalated', 'stalled', 'Script task rejected by the reviewer: The hook is weak. 2 of 2 retries used. The run ended as escalated.'],
+  ]);
+  expect(taskViews(store.tasks(runId), store.events(runId)).find((t) => t.id === 'scripts')).toMatchObject({
+    shownStatus: 'escalated',
+    stuckReason: 'Script task rejected by the reviewer: The hook is weak. 2 of 2 retries used. The run ended as escalated.',
+  });
 });

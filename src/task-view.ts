@@ -26,6 +26,8 @@ const whatFailed: Record<string, (event: TuloyEvent) => string> = {
   missed_heartbeat: (e) => `stalled: ${e.cause}`,
   invalid_output: () => 'failed: its output did not match the schema',
   rate_limited: () => 'failed: the model is rate-limited',
+  // The main issue is the first issue of the first rejected script.
+  rejected: (e) => `rejected by the reviewer: ${((e.data as { reviews: { verdict: string; issues: string[] }[] }).reviews.find((r) => r.verdict === 'reject')?.issues[0] ?? 'no issue given').replace(/\.$/, '')}`,
   model_unavailable: (e) => `failed: the model is not available (${e.cause.replace(/\.$/, '').slice(0, 300)})`,
 };
 
@@ -41,7 +43,7 @@ export function taskViews(tasks: Task[], events: TuloyEvent[]): (Task & { shownS
 function stuckReason(task: Task, events: TuloyEvent[]): string | null {
   if (!['stalled', 'recovering', 'escalated'].includes(shown[task.status])) return null;
   const mine = events.filter((e) => e.taskId === task.id);
-  const failure = mine.findLast((e) => ['watch', 'validate', 'model_call'].includes(e.action) && e.result in whatFailed);
+  const failure = mine.findLast((e) => ['watch', 'validate', 'model_call', 'review'].includes(e.action) && e.result in whatFailed);
   if (!failure) return null;
   const recovery = mine.findLast((e) => e.seq > failure.seq && (e.action === 'retry' || e.action === 'escalate'));
   const retry = recovery?.data as { retry: number; of: number; waitMs: number } | null;
