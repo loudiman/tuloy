@@ -121,16 +121,22 @@ function plainIssue(issues: z.core.$ZodIssue[]): string {
   return `The ${name} in the output ${problem}.${more}`;
 }
 
-/** An output that the AI SDK refused: Tuloy checks the model's text again with its own schema, to say what is wrong in plain words. */
-function refused(role: Role, text: string | undefined, raw: string): AgentResult {
+/**
+ * An output that the AI SDK refused: Tuloy checks the model's text again with its own schema, to say what is wrong in plain words.
+ * The failure keeps why the model stopped and the length of its raw text. An answer that stopped at the limit of output tokens is a cut answer.
+ */
+function refused(role: Role, error: { text: string | undefined; finishReason: string | undefined }, raw: string, maxOutputTokens: number): AgentResult {
+  const why = { raw, finishReason: error.finishReason, textLength: error.text?.length ?? 0 };
+  const fail = (detail: string): AgentResult => ({ ok: false, failure: { kind: 'invalid_output', detail, ...why } });
+  if (error.finishReason === 'length') return fail(`The answer was cut at the limit of ${maxOutputTokens} output tokens.`);
   let output: unknown;
   try {
-    output = JSON.parse(text ?? '');
+    output = JSON.parse(error.text ?? '');
   } catch {
-    return { ok: false, failure: { kind: 'invalid_output', detail: 'The output is not JSON.', raw } };
+    return fail('The output is not JSON.');
   }
   const checked = check(role, output);
-  return checked.ok ? { ok: false, failure: { kind: 'invalid_output', detail: 'The output does not match the schema.', raw } } : checked;
+  return checked.ok ? fail('The output does not match the schema.') : { ok: false, failure: { ...why, ...checked.failure } };
 }
 
 async function callModel(role: Role, input: unknown, model: LanguageModel, abortSignal: AbortSignal, clock: Clock, maxOutputTokens: number, outside: Outside[]): Promise<AgentResult> {
@@ -153,7 +159,7 @@ async function callModel(role: Role, input: unknown, model: LanguageModel, abort
   } catch (error) {
     // A provider can put an address with a key id in its error text. No address goes into the event log.
     const detail = (error instanceof Error ? error.message : String(error)).replace(/https?:\/\/[^\s)]+/g, '[address removed]');
-    if (NoObjectGeneratedError.isInstance(error)) return refused(role, error.text, detail);
+    if (NoObjectGeneratedError.isInstance(error)) return refused(role, error, detail, maxOutputTokens);
     if (NoOutputGeneratedError.isInstance(error)) return { ok: false, failure: { kind: 'invalid_output', detail: 'The model gave no output.', raw: detail } };
     if (APICallError.isInstance(error) && error.statusCode === 429) {
       // Retry-After is a number of seconds or a date.

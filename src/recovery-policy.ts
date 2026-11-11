@@ -5,6 +5,9 @@ export type Failure = {
   detail: string;
   /** The raw text behind `detail`, when `detail` is a plain sentence made from it. It goes into the event data. */
   raw?: string;
+  /** For an answer of a model that could not be parsed: why the model stopped (`length` = the limit of output tokens), and the length of its raw text. They go into the event data. */
+  finishReason?: string;
+  textLength?: number;
   /** Only for `rate_limited`: the wait that the model asked for. */
   retryAfterMs?: number;
   /** True when the attempt ran on the owner's backup model. The conductor sets it. */

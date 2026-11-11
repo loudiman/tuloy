@@ -9,6 +9,13 @@ export type Step = unknown;
 /** A step that never answers: the model call stays open until the agent runner stops it. */
 export const hang = Symbol('hang');
 
+/** A step that gives this raw text as the model's answer, with the finish reason `length`: the answer was cut at the limit of output tokens. */
+const cutText = Symbol('cut');
+export const cut = (text: string) => ({ [cutText]: text });
+/** A step that gives this raw text as the model's answer, with the finish reason `stop`. */
+const rawText = Symbol('raw');
+export const raw = (text: string) => ({ [rawText]: text });
+
 /** A step that gives the good output after `ms` on the test clock. */
 export const slow = (ms: number) => ({ [hang]: ms });
 
@@ -50,9 +57,10 @@ export function scriptedModel(script: Partial<Record<Role, Step[]>> = {}, clock?
       }
       if (step instanceof Error) throw step;
       if (step === hang) await new Promise((_, reject) => options.abortSignal?.addEventListener('abort', () => reject(new Error('stopped'))));
+      const marked = typeof step === 'object' && step !== null ? (step as { [cutText]?: string; [rawText]?: string }) : {};
       return {
-        content: [{ type: 'text', text: JSON.stringify(step) }],
-        finishReason: { unified: 'stop', raw: undefined },
+        content: [{ type: 'text', text: marked[cutText] ?? marked[rawText] ?? JSON.stringify(step) }],
+        finishReason: { unified: marked[cutText] === undefined ? 'stop' : 'length', raw: undefined },
         usage: {
           inputTokens: { total: 100, noCache: 100, cacheRead: undefined, cacheWrite: undefined },
           outputTokens: { total: 50, text: 50, reasoning: undefined },

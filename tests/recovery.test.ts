@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { SAMPLE_GOAL } from '../src/planner.ts';
 import { taskViews } from '../src/task-view.ts';
 import { goodOutput, hang, slow } from './harness/scripted-model.ts';
+import { cut, raw } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
 type Tuloy = ReturnType<typeof testTuloy>;
@@ -255,4 +256,32 @@ test.each([
   await conductor.startRun(SAMPLE_GOAL).ended;
 
   expect(reasons).toEqual([reason]);
+});
+
+// ---- An answer that cannot be parsed: the event says why the model stopped ----
+
+test('an answer that was cut at the limit of output tokens: the cause says so in plain words, and the event has the finish reason and the length of the raw text', async () => {
+  const half = '{"scripts":[{"id":"s1","hook":"Tatlong sari-sari hacks","body":"Una, ayusin ang';
+  const tuloy = testTuloy({ script: { script: [cut(half)] }, limits: { maxOutputTokens: 2000 } });
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(store.events(runId).find((e) => e.result === 'invalid_output')).toMatchObject({
+    taskId: 'scripts',
+    action: 'validate',
+    cause: 'The answer was cut at the limit of 2000 output tokens.',
+    data: { finishReason: 'length', textLength: half.length, detail: expect.stringContaining('No object generated') },
+  });
+});
+
+test('an answer that is not JSON and was not cut: the event has the finish reason stop and the length of the raw text', async () => {
+  const { conductor, store } = testTuloy({ script: { script: [raw('Here are your scripts!')] } });
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.events(runId).find((e) => e.result === 'invalid_output')).toMatchObject({ cause: 'The output is not JSON.', data: { finishReason: 'stop', textLength: 22 } });
 });

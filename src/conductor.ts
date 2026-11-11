@@ -244,7 +244,7 @@ export function createConductor({
       const failure: Failure = { ...result.failure, onBackup: model === 'backup', onPeer: model === 'peer', onGoal: task.role === 'goal' };
       // The `review` event of a rejection is in the log already.
       if (failure.kind !== 'reviewer_rejection')
-        store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind, data: failure.raw ? { detail: failure.raw } : undefined });
+        store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind, data: failure.raw ? { detail: failure.raw, finishReason: failure.finishReason, textLength: failure.textLength } : undefined });
       store.updateTask(runId, taskId, { status: failedStatus[failure.kind] });
 
       if (failure.onPeer && failure.fast && peer) didNotTake.push(peer.name);
