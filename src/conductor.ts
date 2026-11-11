@@ -53,11 +53,14 @@ export function createConductor({
     return last?.action === 'review' && last.result === 'rejected' ? { kind: 'reviewer_rejection', detail: last.cause } : undefined;
   }
 
-  /** Stores the task graph and starts the run. `ended` resolves when the run is done or escalated; it never rejects. */
-  function startRun(goal: string): { runId: number; ended: Promise<void> } {
+  /**
+   * Stores the task graph and starts the run. `ended` resolves when the run is done or escalated; it never rejects.
+   * `forPeer` is the name of the peer that gave the full goal; such a run never uses steps 3 and 4 of the recovery order.
+   */
+  function startRun(goal: string, forPeer: string | null = null): { runId: number; ended: Promise<void> } {
     const tasks = planTaskGraph(goal);
-    const runId = store.createRun(goal, tasks);
-    store.append({ runId, action: 'plan', cause: 'the owner gave a goal', result: `task graph stored: ${tasks.length} tasks` });
+    const runId = store.createRun(goal, tasks, forPeer);
+    store.append({ runId, action: 'plan', cause: forPeer ? `${forPeer} gave a full goal` : 'the owner gave a goal', result: `task graph stored: ${tasks.length} tasks`, data: forPeer ? { peer: forPeer } : undefined });
     return { runId, ended: drive(runId) };
   }
 

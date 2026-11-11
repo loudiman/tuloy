@@ -4,7 +4,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import type { Conductor } from './conductor.ts';
 import { createPeerServer } from './peer-server.ts';
 import { SAMPLE_GOAL } from './planner.ts';
-import { roles, type Role } from './schemas.ts';
+import { skills, type Skill } from './schemas.ts';
 import type { Store } from './store.ts';
 import { taskViews } from './task-view.ts';
 
@@ -65,9 +65,9 @@ export function createServer({ store, conductor, owner, peerTasksPerHour = 20, d
         wanted = JSON.parse(body) ?? {};
       } catch {}
       const { task = 'script', kind } = wanted;
-      if (typeof task !== 'string' || !Object.hasOwn(roles, task)) return json(400, { error: `task must be an agent role: ${Object.keys(roles).join(', ')}` });
+      if (typeof task !== 'string' || !Object.hasOwn(skills, task)) return json(400, { error: `task must be an agent role, or goal for the full goal at a peer: ${Object.keys(skills).join(', ')}` });
       if (typeof kind !== 'string' || !injectionKinds.includes(kind)) return json(400, { error: `kind must be one of: ${injectionKinds.join(', ')}` });
-      return json(201, store.addInjection(task as Role, kind));
+      return json(201, store.addInjection(task as Skill, kind));
     }
     if (req.method === 'GET' && path === '/api/events') {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });

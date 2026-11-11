@@ -5,21 +5,22 @@ import { AgentEvent, type AgentExecutor, DefaultRequestHandler, InMemoryTaskStor
 import { z } from 'zod';
 import { createAllowedList, readJson } from './allowed-list.ts';
 import type { Conductor } from './conductor.ts';
-import { roles, type Role } from './schemas.ts';
+import { skills, type Skill } from './schemas.ts';
 import type { Store } from './store.ts';
 
-const roleNames = Object.keys(roles) as [Role, ...Role[]];
+const skillNames = Object.keys(skills) as [Skill, ...Skill[]];
 
-const skillWords: Record<Role, string> = {
+const skillWords: Record<Skill, string> = {
   trend_scout: 'Finds the short-video trends that fit a goal.',
   script: 'Writes one short-video script per trend.',
   reviewer: 'Passes or rejects each script against written criteria.',
   scheduler: 'Makes a posting schedule in Manila time for the scripts that passed.',
+  goal: 'Takes a full goal: this Tuloy does a full run and returns the scripts and the posting schedule.',
 };
 
 /** What a peer sends, as the JSON text of one A2A message. The result comes back as the JSON text of one artifact. */
-const peerMessage = z.object({ skill: z.enum(roleNames), input: z.unknown() });
-const HOW_TO_SEND = 'Send JSON text: { "skill": "<agent role>", "input": { ... } }. The agent card lists the agent roles.';
+const peerMessage = z.object({ skill: z.enum(skillNames), input: z.unknown() });
+const HOW_TO_SEND = 'Send JSON text: { "skill": "<skill id>", "input": { ... } }. The agent card lists the skills: one for each agent role, and "goal" for a full goal.';
 
 const digest = (key: string) => createHash('sha256').update(key).digest();
 
@@ -31,13 +32,13 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
   const card = (address: string) =>
     AgentCard.fromJSON({
       name: `Tuloy of ${owner}`,
-      description: `The agents of ${owner}'s Tuloy. One task for one agent role. ${HOW_TO_SEND}`,
+      description: `The agents and the conductor of ${owner}'s Tuloy. One task for one agent role, or a full goal. ${HOW_TO_SEND}`,
       version: '1.0.0',
       supportedInterfaces: [{ url: `${address}/a2a`, protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
       capabilities: { streaming: false, pushNotifications: false },
       defaultInputModes: ['text/plain'],
       defaultOutputModes: ['text/plain'],
-      skills: roleNames.map((role) => ({ id: role, name: role.replace('_', ' '), description: skillWords[role], tags: ['tuloy'] })),
+      skills: skillNames.map((skill) => ({ id: skill, name: skill === 'goal' ? 'full goal' : skill.replace('_', ' '), description: skillWords[skill], tags: ['tuloy'] })),
       securitySchemes: { key: { httpAuthSecurityScheme: { scheme: 'Bearer' } } },
       securityRequirements: [{ schemes: { key: { list: [] } } }],
     });
@@ -63,21 +64,32 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
       const message = peerMessage.safeParse(json);
       if (!message.success) return begin('TASK_STATE_REJECTED', HOW_TO_SEND);
       const role = message.data.skill;
-      const input = roles[role].input.safeParse(message.data.input);
-      if (!input.success) return begin('TASK_STATE_REJECTED', `The input does not match the input schema of the ${role} agent: ${z.prettifyError(input.error)}`);
+      const input = skills[role].input.safeParse(message.data.input);
+      if (!input.success) return begin('TASK_STATE_REJECTED', `The input does not match the input schema of the ${role} skill: ${z.prettifyError(input.error)}`);
       if (store.peerRunsInLastHour(peer) >= peerTasksPerHour) return begin('TASK_STATE_REJECTED', `${peer} is at the limit of ${peerTasksPerHour} tasks per hour.`);
 
       begin('TASK_STATE_WORKING');
-      const { runId, ended } = conductor.startPeerTask(peer, role, input.data);
-      await ended;
-      const [task] = store.tasks(runId);
       const update = (state: keyof typeof TaskState, words?: string) =>
         bus.publish(AgentEvent.statusUpdate({ ...ids, status: Task.fromJSON({ status: status(state, words) }).status, metadata: undefined }));
-      if (task?.status !== 'done') return update('TASK_STATE_FAILED', `The ${role} agent did not finish the task: ${task?.status}.`);
+      let output: unknown;
+      if (role === 'goal') {
+        // A full goal starts a run, and the A2A task follows that run. The result is the scripts and the schedule of the run's tasks.
+        const { runId, ended } = conductor.startRun(input.data.goal, peer);
+        await ended;
+        const run = skills.goal.output.safeParse(Object.assign({}, ...store.tasks(runId).map((t) => t.output)));
+        if (store.run(runId)?.status !== 'done' || !run.success) return update('TASK_STATE_FAILED', `${owner}'s Tuloy did not finish the goal: the run ended as ${store.run(runId)?.status}.`);
+        output = run.data;
+      } else {
+        const { runId, ended } = conductor.startPeerTask(peer, role, input.data);
+        await ended;
+        const [task] = store.tasks(runId);
+        if (task?.status !== 'done') return update('TASK_STATE_FAILED', `The ${role} agent did not finish the task: ${task?.status}.`);
+        output = task.output;
+      }
       bus.publish(
         AgentEvent.artifactUpdate({
           ...ids,
-          artifact: { artifactId: 'output', name: `${role} output`, description: '', parts: Message.fromJSON({ parts: [{ text: JSON.stringify(task.output) }] }).parts, metadata: undefined, extensions: [] },
+          artifact: { artifactId: 'output', name: `${role} output`, description: '', parts: Message.fromJSON({ parts: [{ text: JSON.stringify(output) }] }).parts, metadata: undefined, extensions: [] },
           append: false,
           lastChunk: true,
           metadata: undefined,
@@ -85,7 +97,7 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
       );
       update('TASK_STATE_COMPLETED');
     },
-    // ponytail: a task for a peer is one model call; it is not stopped. Cancel answers with the task as it is.
+    // ponytail: work for a peer is not stopped (a task is one model call; a goal runs to its end). Cancel answers with the task as it is.
     async cancelTask() {},
   };
 
