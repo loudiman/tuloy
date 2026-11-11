@@ -73,9 +73,13 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     let output: unknown;
     for (;;) {
       store.append({ runId, taskId, action: 'dispatch', cause: history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done', result: 'started' });
+      // Demo mode: a pending injection for this agent is used now, one time.
+      const injected = store.takeInjection(task.role);
+      if (injected) store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
       const result = await runAgent(task.role, input, models.primary, {
         clock,
         limits,
+        injected,
         onHeartbeat: () => store.append({ runId, taskId, action: 'heartbeat', cause: 'the agent waits for the model', result: 'alive' }),
       });
       if (result.ok) {

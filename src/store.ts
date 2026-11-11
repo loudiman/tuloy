@@ -41,6 +41,9 @@ export type TuloyEvent = {
 };
 export type NewEvent = Pick<TuloyEvent, 'runId' | 'action' | 'result' | 'cause'> & { taskId?: string; data?: unknown };
 
+/** A pending injected failure. `task` is the agent role that gets it. */
+export type Injection = { id: number; task: Role; kind: string };
+
 export type Store = ReturnType<typeof openStore>;
 
 type Row = Record<string, any>;
@@ -54,6 +57,7 @@ export function openStore(file: string, clock: { now(): number }) {
       role TEXT NOT NULL, status TEXT NOT NULL, agent TEXT, output TEXT, PRIMARY KEY (run_id, id));
     CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL, run_id INTEGER NOT NULL, task_id TEXT,
       cause TEXT NOT NULL, action TEXT NOT NULL, result TEXT NOT NULL, data TEXT);
+    CREATE TABLE IF NOT EXISTS injections (id INTEGER PRIMARY KEY AUTOINCREMENT, task TEXT NOT NULL, kind TEXT NOT NULL);
   `);
   const listeners = new Set<(event: TuloyEvent) => void>();
 
@@ -119,6 +123,19 @@ export function openStore(file: string, clock: { now(): number }) {
       const stored: TuloyEvent = { seq, time, runId: event.runId, taskId, cause: event.cause, action: event.action, result: event.result, data };
       for (const listener of listeners) listener(stored);
       return stored;
+    },
+    /** Demo mode: adds a pending injection, a failure made on purpose for the next attempt of the agent with this role. */
+    addInjection(task: Role, kind: string): Injection {
+      return { id: Number(db.prepare('INSERT INTO injections (task, kind) VALUES (?, ?)').run(task, kind).lastInsertRowid), task, kind };
+    },
+    /** The pending injections, oldest first. */
+    injections(): Injection[] {
+      return db.prepare('SELECT * FROM injections ORDER BY id').all().map((r: Row) => ({ id: r.id, task: r.task, kind: r.kind }));
+    },
+    /** Removes and returns the oldest pending injection for this role. Each injection is used one time. */
+    takeInjection(task: Role): string | undefined {
+      const row = db.prepare('DELETE FROM injections WHERE id = (SELECT MIN(id) FROM injections WHERE task = ?) RETURNING kind').get(task);
+      return row?.kind as string | undefined;
     },
     /** Calls `listener` for each new event. Returns the function that stops it. */
     subscribe(listener: (event: TuloyEvent) => void): () => void {
