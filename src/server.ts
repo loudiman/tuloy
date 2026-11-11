@@ -1,12 +1,15 @@
 import http from 'node:http';
 import type { Conductor } from './conductor.ts';
 import { page } from './page.ts';
+import { createPeerServer } from './peer-server.ts';
 import { SAMPLE_GOAL } from './planner.ts';
 import type { Store } from './store.ts';
 
 /** Serves the plain live page, its API, and the live event stream (server-sent events from the event log). */
 export function createServer({ store, conductor, owner }: { store: Store; conductor: Conductor; owner: string }) {
+  const peerServer = createPeerServer({ owner });
   return http.createServer(async (req, res) => {
+    if (await peerServer.handle(req, res)) return;
     const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
     const path = new URL(req.url ?? '/', 'http://tuloy').pathname;
     const runId = Number(/^\/api\/runs\/(\d+)$/.exec(path)?.[1]);
