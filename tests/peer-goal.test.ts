@@ -174,7 +174,7 @@ async function sendGoal(from: Started, to: Started) {
   return { first, last };
 }
 
-test('the agent card lists a skill for a full goal; a request with it starts a run on the peer, and the A2A task follows that run to its scripts and schedule', async () => {
+test('the agent card lists a skill for a full goal; a goal sent with it starts a run on the peer, and the A2A task follows that run to its scripts and schedule', async () => {
   const sam = await startTuloy('Sam');
   const lou = await startTuloy('Lou');
   await invite(sam, lou);

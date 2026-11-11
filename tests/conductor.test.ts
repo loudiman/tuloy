@@ -27,7 +27,7 @@ test('a goal becomes a stored task graph and the run ends as done with scripts a
 /** The event log of a run as short lines: "task action result". */
 const trail = (store: ReturnType<typeof testTuloy>['store'], runId: number) => store.events(runId).map((e) => `${e.taskId ?? 'run'} ${e.action} ${e.result}`);
 
-test('every step of a run is one event, in order, with the time of the clock', async () => {
+test('every action of the conductor in a run is one event, in order, with the time of the clock', async () => {
   const { conductor, store, clock } = testTuloy();
 
   const { runId, ended } = conductor.startRun(SAMPLE_GOAL);

@@ -94,7 +94,7 @@ test('a peer on the allowed list sends one task for one agent role; the A2A task
   expect(sam.model.calls.map((c) => [c.role, JSON.parse(c.prompt.split('\n')[2]!)])).toEqual([['script', scriptInput]]);
 });
 
-test('a request with no key, a wrong key, or the key of a Tuloy that is not on the allowed list is refused and nothing runs', async () => {
+test('a task sent with no key, a wrong key, or the key of a Tuloy that is not on the allowed list is refused and nothing runs', async () => {
   const { sam } = await twoPeers();
   // Mallory is a real Tuloy with its own key, but Sam never put it on the allowed list.
   const mallory = await startTuloy('Mallory');
@@ -275,7 +275,7 @@ test('an invite stops working after 24 hours; one minute before that it still wo
   expect(sam.store.peers().map((p) => p.name)).toEqual(['Lou']);
 });
 
-test('a removed peer is refused on its next request', async () => {
+test('a removed peer is refused on its next task', async () => {
   const { sam, lou } = await invited();
   const toSam = await peerClient(sam.url, lou.store.peers()[0]!.sendKey);
   expect((await toSam.ended((await toSam.send('script', scriptInput)).id)).status?.state).toBe(TaskState.TASK_STATE_COMPLETED);

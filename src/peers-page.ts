@@ -89,7 +89,7 @@ async function load() {
     const remove = document.createElement('button');
     remove.textContent = 'Remove'; remove.setAttribute('aria-label', 'Remove ' + peer.name);
     remove.onclick = async () => {
-      if (await call('DELETE', '/api/peers/' + encodeURIComponent(peer.name))) { say(peer.name + ' is off the allowed list. Its next request is refused.'); load(); }
+      if (await call('DELETE', '/api/peers/' + encodeURIComponent(peer.name))) { say(peer.name + ' is off the allowed list. Its next task or goal is refused.'); load(); }
     };
     tr.insertCell().append(remove);
     return tr;

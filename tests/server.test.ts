@@ -224,3 +224,21 @@ test('with a configured host, the owner\'s API takes a call that names that host
     server.close();
   }
 });
+
+// ---- Review fix 13: the words of the glossary in the UI text ----
+
+test('the UI text uses the words of the glossary: re-route (not model switch), and a task or a goal (not a request)', async () => {
+  const { server, url } = await startTestServer();
+  try {
+    const app = await (await fetch(`${url}/page/app.ts`)).text();
+    const peers = await (await fetch(`${url}/peers`)).text();
+
+    expect(app).not.toMatch(/model switch/i);
+    expect(app).toContain('Handoffs, retries and re-routes show here as they happen.');
+    expect(peers).not.toMatch(/request/i);
+    expect(peers).toContain('Its next task or goal is refused.');
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});

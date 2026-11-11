@@ -230,7 +230,7 @@ function drawTrail() {
   const trail = $('trail');
   if (!detail) {
     $('trail-title').textContent = 'Event trail';
-    return trail.replaceChildren(h('li', { class: 'empty' }, 'Handoffs, retries, model switches and re-routes show here as they happen.'));
+    return trail.replaceChildren(h('li', { class: 'empty' }, 'Handoffs, retries and re-routes show here as they happen.'));
   }
   const pick = selected();
   const task = detail.tasks.find((t) => t.id === pick);
