@@ -6,9 +6,9 @@ import type { TuloyEvent } from '../src/store.ts';
 import { goodOutput } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
-async function startTestServer() {
+async function startTestServer(options: { demo?: boolean } = {}) {
   const { conductor, store } = testTuloy();
-  const server = createServer({ store, conductor, owner: 'Lou' });
+  const server = createServer({ store, conductor, owner: 'Lou', ...options });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return { server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
 }
@@ -78,5 +78,44 @@ test('an unknown run is a 404', async () => {
   } finally {
     server.closeAllConnections();
     server.close();
+  }
+});
+
+test('the server sends the dashboard: the page, its style, its two scripts as JavaScript with no types, and the fonts', async () => {
+  const { server, url } = await startTestServer();
+  try {
+    const html = await (await fetch(url)).text();
+    for (const part of ['/page/style.css', '/page/app.ts', '/fonts/archivo.woff2', '/fonts/martian-mono.woff2']) expect(html).toContain(part);
+
+    const view = await fetch(`${url}/page/view.ts`);
+    const script = await view.text();
+    expect(view.headers.get('content-type')).toBe('text/javascript; charset=utf-8');
+    expect(script).toContain('export function shownStatus(');
+    expect(script).not.toContain('export type');
+
+    expect((await fetch(`${url}/page/app.ts`)).headers.get('content-type')).toBe('text/javascript; charset=utf-8');
+    expect((await fetch(`${url}/page/style.css`)).headers.get('content-type')).toBe('text/css; charset=utf-8');
+    const font = await fetch(`${url}/fonts/archivo.woff2`);
+    expect(font.headers.get('content-type')).toBe('font/woff2');
+    expect((await font.arrayBuffer()).byteLength).toBeGreaterThan(10_000);
+    expect((await fetch(`${url}/fonts/martian-mono.woff2`)).status).toBe(200);
+    expect((await fetch(`${url}/page/../server.ts`)).status).toBe(404);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test('the list of runs says if this Tuloy is in demo mode', async () => {
+  const off = await startTestServer();
+  const on = await startTestServer({ demo: true });
+  try {
+    expect(((await (await fetch(`${off.url}/api/runs`)).json()) as any).demo).toBe(false);
+    expect(((await (await fetch(`${on.url}/api/runs`)).json()) as any).demo).toBe(true);
+  } finally {
+    for (const { server } of [off, on]) {
+      server.closeAllConnections();
+      server.close();
+    }
   }
 });

@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
+import { stripTypeScriptTypes } from 'node:module';
 import type { Conductor } from './conductor.ts';
-import { page } from './page.ts';
 import { createPeerServer } from './peer-server.ts';
 import { SAMPLE_GOAL } from './planner.ts';
 import { roles, type Role } from './schemas.ts';
@@ -10,7 +11,19 @@ import { taskViews } from './task-view.ts';
 /** The injection kinds that are built. The other kinds of the shared contract answer 400 until their ticket builds them. */
 const injectionKinds = ['timeout', 'invalid_output', 'primary_outage', 'all_models_outage'];
 
-/** Serves the plain live page, its API, and the live event stream (server-sent events from the event log). */
+const file = (path: string) => new URL(path, import.meta.url);
+const font = (name: string) => file(`../node_modules/@fontsource-variable/${name}`);
+/** The files of the dashboard: a fixed list, so no path from a request reaches the disk. */
+const pageFiles: Record<string, { file: URL; type: string }> = {
+  '/': { file: file('./page/index.html'), type: 'text/html; charset=utf-8' },
+  '/page/style.css': { file: file('./page/style.css'), type: 'text/css; charset=utf-8' },
+  '/page/app.ts': { file: file('./page/app.ts'), type: 'text/javascript; charset=utf-8' },
+  '/page/view.ts': { file: file('./page/view.ts'), type: 'text/javascript; charset=utf-8' },
+  '/fonts/archivo.woff2': { file: font('archivo/files/archivo-latin-standard-normal.woff2'), type: 'font/woff2' },
+  '/fonts/martian-mono.woff2': { file: font('martian-mono/files/martian-mono-latin-wght-normal.woff2'), type: 'font/woff2' },
+};
+
+/** Serves the dashboard, its API, the A2A surface, and the live event stream (server-sent events from the event log). */
 export function createServer({ store, conductor, owner, peerTasksPerHour = 20, demo = false }: { store: Store; conductor: Conductor; owner: string; peerTasksPerHour?: number; demo?: boolean }) {
   const peerServer = createPeerServer({ store, conductor, owner, peerTasksPerHour });
   return http.createServer(async (req, res) => {
@@ -19,8 +32,13 @@ export function createServer({ store, conductor, owner, peerTasksPerHour = 20, d
     const path = new URL(req.url ?? '/', 'http://tuloy').pathname;
     const runId = Number(/^\/api\/runs\/(\d+)$/.exec(path)?.[1]);
 
-    if (req.method === 'GET' && path === '/') return res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(page);
-    if (req.method === 'GET' && path === '/api/runs') return json(200, { owner, sampleGoal: SAMPLE_GOAL, runs: store.runs() });
+    const pageFile = req.method === 'GET' ? pageFiles[path] : undefined;
+    if (pageFile) {
+      // ponytail: no bundler. The browser gets the page's TypeScript with the types removed by Node. Read on each request: the files are small.
+      const body = readFileSync(pageFile.file);
+      return res.writeHead(200, { 'content-type': pageFile.type }).end(path.endsWith('.ts') ? stripTypeScriptTypes(body.toString()) : body);
+    }
+    if (req.method === 'GET' && path === '/api/runs') return json(200, { owner, demo, sampleGoal: SAMPLE_GOAL, runs: store.runs() });
     if (req.method === 'POST' && path === '/api/runs') {
       // An empty body starts the labelled sample goal.
       let body = '';
