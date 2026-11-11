@@ -267,3 +267,18 @@ test('an invite stops working after 24 hours; one minute before that it still wo
   expect(((await refused.json()) as any).error).toContain('24 hours');
   expect(sam.store.peers().map((p) => p.name)).toEqual(['Lou']);
 });
+
+test('a removed peer is refused on its next request', async () => {
+  const { sam, lou } = await invited();
+  const toSam = await peerClient(sam.url, lou.store.peers()[0]!.sendKey);
+  expect((await toSam.ended((await toSam.send('script', scriptInput)).id)).status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+
+  const removed = await fetch(`${sam.url}/api/peers/Lou`, { method: 'DELETE' });
+  const again = await fetch(`${sam.url}/api/peers/Lou`, { method: 'DELETE' });
+
+  expect(removed.status).toBe(204);
+  expect(again.status).toBe(404);
+  expect(sam.store.peers()).toEqual([]);
+  await expect(toSam.send('script', scriptInput)).rejects.toThrow('401');
+  expect(sam.model.calls).toHaveLength(1);
+});

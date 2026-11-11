@@ -29,6 +29,12 @@ export function createAllowedList({ store, owner }: { store: Store; owner: strin
       const self = `http://${req.socket.localAddress}:${req.socket.localPort}`;
       const token = /^\/invite\/([\w-]+)$/.exec(path)?.[1];
 
+      // The owner removes a peer. The A2A endpoint reads the list on each request, so the peer's next request is refused.
+      const toRemove = /^\/api\/peers\/([^/]+)$/.exec(path)?.[1];
+      if (req.method === 'DELETE' && toRemove) {
+        return store.removePeer(decodeURIComponent(toRemove)) ? (res.writeHead(204).end(), true) : json(404, { error: 'No such peer on the allowed list.' });
+      }
+
       // The owner makes an invite. The token is random; only its hash is stored.
       if (req.method === 'POST' && path === '/api/invites') {
         const made = newKey();

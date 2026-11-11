@@ -154,6 +154,10 @@ export function openStore(file: string, clock: Clock) {
     addPeer(peer: Peer) {
       db.prepare('INSERT OR REPLACE INTO peers (name, address, send_key, accept_key) VALUES (?, ?, ?, ?)').run(peer.name, peer.address, peer.sendKey, peer.acceptKey);
     },
+    /** Takes a peer off the allowed list. False when there was no such peer. */
+    removePeer(name: string): boolean {
+      return db.prepare('DELETE FROM peers WHERE name = ?').run(name).changes === 1;
+    },
     /** The allowed list. */
     peers(): Peer[] {
       return db.prepare('SELECT * FROM peers ORDER BY name').all().map((r: Row) => ({ name: r.name, address: r.address, sendKey: r.send_key, acceptKey: r.accept_key }));
