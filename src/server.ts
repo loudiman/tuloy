@@ -8,7 +8,7 @@ import type { Store } from './store.ts';
 import { taskViews } from './task-view.ts';
 
 /** The injection kinds that are built. The other kinds of the shared contract answer 400 until their ticket builds them. */
-const injectionKinds = ['timeout', 'invalid_output'];
+const injectionKinds = ['timeout', 'invalid_output', 'primary_outage', 'all_models_outage'];
 
 /** Serves the plain live page, its API, and the live event stream (server-sent events from the event log). */
 export function createServer({ store, conductor, owner, peerTasksPerHour = 20, demo = false }: { store: Store; conductor: Conductor; owner: string; peerTasksPerHour?: number; demo?: boolean }) {

@@ -98,12 +98,15 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     const history: Failure[] = [];
     let output: unknown;
     let model: 'primary' | 'backup' = 'primary';
+    let allDown: string | undefined;
     for (;;) {
       const why = model === 'backup' ? 're-routed to the backup model' : history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done';
       store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'started' });
-      // Demo mode: a pending injection for this agent is used now, one time.
-      const injected = store.takeInjection(task.role);
-      if (injected) store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
+      // Demo mode: a pending injection for this agent is used now, one time. Injections act on the primary model;
+      // only an outage of all own models goes with the task to the backup model.
+      const injected = model === 'primary' ? store.takeInjection(task.role) : allDown;
+      if (injected === 'all_models_outage') allDown = injected;
+      if (injected && model === 'primary') store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
       // The time limit starts when the agent has its slot, not while it waits in line.
       const result = await withModelSlot(() =>
         runAgent(task.role, input, models[model], {
