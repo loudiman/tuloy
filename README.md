@@ -49,6 +49,11 @@ For step 7, send a second injection before the run: `-d '{"task":"script","kind"
 
 An injection waits until an attempt of that agent uses it, in a run of the owner (never in a run for a peer). To clear the injections that wait: **Clear the waiting injections** in the demo panel, or `curl -s -X DELETE http://127.0.0.1:4100/api/injections`.
 
+## Unattended runs
+
+- On a Mac, start Tuloy with `caffeinate -i pnpm start`, so that the machine does not sleep in the middle of a run. A sleep shows in the run as a stall of some minutes.
+- Each model call has a limit on its output tokens (`TULOY_MAX_OUTPUT_TOKENS`, default 4000). An answer that reaches the limit is cut, and the event says so: "The answer was cut at the limit of 4000 output tokens." Raise the setting if you see that sentence.
+
 ## Who can call a Tuloy
 
 - Tuloy listens on `127.0.0.1` (this machine only). Set `TULOY_HOST` (for example `0.0.0.0`) to serve other machines.
