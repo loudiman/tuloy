@@ -1,4 +1,5 @@
 import type { LanguageModel } from 'ai';
+import type { z } from 'zod';
 import { runAgent } from './agent-runner.ts';
 import { planTaskGraph } from './planner.ts';
 import { roles } from './schemas.ts';
@@ -74,6 +75,20 @@ export function createConductor({ store, models }: { store: Store; models: { pri
     }
     store.append({ runId, taskId, action: 'validate', cause: `the output matches the ${task.role} schema`, result: 'valid' });
     store.updateTask(runId, taskId, { status: 'done', output: result.output });
+
+    // A rejection is a failure of the script task. The scheduler starts only after a pass.
+    if (task.role === 'reviewer') {
+      const { reviews } = result.output as z.infer<typeof roles.reviewer.output>;
+      const rejected = reviews.filter((r) => r.verdict === 'reject');
+      const scriptTaskId = deps.find((d) => d.role === 'script')?.id ?? taskId;
+      if (rejected.length) {
+        store.append({ runId, taskId: scriptTaskId, action: 'review', cause: rejected.map((r) => `${r.script_id}: ${r.issues.join(' ')}`).join('; '), result: 'rejected', data: { reviews } });
+        store.updateTask(runId, scriptTaskId, { status: 'rejected' });
+        endRun(runId, 'escalated', `the reviewer rejected ${scriptTaskId}`);
+        return 'escalated';
+      }
+      store.append({ runId, taskId: scriptTaskId, action: 'review', cause: 'the reviewer passed every script', result: 'pass' });
+    }
     return 'done';
   }
 
