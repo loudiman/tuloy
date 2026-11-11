@@ -151,6 +151,8 @@ export function createConductor({
       const from = (store.events(runId).findLast((e) => e.taskId === d.id && e.action === 'reroute')?.data as { peer?: string } | null)?.peer;
       return from ? [{ from, task: d.id, keys: Object.keys(d.output as object) }] : [];
     });
+    // What a peer sent is outside text too: the goal of a run for a peer, and the whole input of one task that a peer sent.
+    if (run.forPeer) outside.push({ from: run.forPeer, task: taskId, keys: ['goal', ...(deps.length ? [] : Object.keys((task.input ?? {}) as object))] });
     // One turn of this loop is one attempt. The earlier failures of the task are the history for the recovery policy.
     // After a restart or a rejection they come from the event log, so that neither gives the task new retries.
     const mine = fresh ? [] : store.events(runId).filter((e) => e.taskId === taskId);
