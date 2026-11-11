@@ -22,8 +22,8 @@ const rejected = {
     { script_id: 's2', verdict: 'pass', score: 8, issues: [], hints: [] },
   ],
 };
-// Three rejections: the first run uses its two retries and ends as escalated.
-const model = scriptedModel({ reviewer: [rejected, rejected, rejected] });
+// Four rejections: the first run uses its two retries and the backup model, and ends as escalated.
+const model = scriptedModel({ reviewer: [rejected, rejected, rejected, rejected] });
 const answer = model.doGenerate;
 model.doGenerate = async (options) => {
   await new Promise((resolve) => setTimeout(resolve, delay));

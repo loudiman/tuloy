@@ -41,11 +41,16 @@ export function fakeClock(start = Date.parse('2026-11-12T09:00:00+08:00')): Cloc
   };
 }
 
-/** One Tuloy for a test: a store (in memory unless `file` is given), a fake clock, a scripted model and a conductor. */
-export function testTuloy(options: { script?: Partial<Record<Role, Step[]>>; file?: string; limits?: Partial<Limits> } = {}) {
+/**
+ * One Tuloy for a test: a store (in memory unless `file` is given), a fake clock, a scripted model and a conductor.
+ * `model` is the primary model. `backup` is a second scripted model with its own `calls`. With no `backupScript` it has
+ * its own copy of `script`: a model failure in a test is a failure of both models. `backupScript: {}` is a backup model with no failure.
+ */
+export function testTuloy(options: { script?: Partial<Record<Role, Step[]>>; backupScript?: Partial<Record<Role, Step[]>>; file?: string; limits?: Partial<Limits> } = {}) {
   const clock = fakeClock();
   const store = openStore(options.file ?? ':memory:', clock);
   const model = scriptedModel(options.script, clock);
-  const conductor = createConductor({ store, models: { primary: model, backup: model }, clock, limits: { ...defaultLimits, ...options.limits } });
-  return { clock, store, model, conductor };
+  const backup = scriptedModel(options.backupScript ?? options.script, clock);
+  const conductor = createConductor({ store, models: { primary: model, backup }, clock, limits: { ...defaultLimits, ...options.limits } });
+  return { clock, store, model, backup, conductor };
 }

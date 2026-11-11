@@ -35,7 +35,7 @@ test('an output that fails its schema is retried after a wait, and the run ends 
   expect(events[5]).toMatchObject({ time: start + 2000, cause: 'retry 1 of 2' });
 });
 
-test('retries wait longer each time and stop at the hard limit; then the run ends as escalated', async () => {
+test('retries wait longer each time and stop at the hard limit; when the backup model fails also, the run ends as escalated', async () => {
   const junk = { scripts: 'junk' };
   const tuloy = testTuloy({ script: { script: [junk, junk, junk, junk] } });
   const { conductor, store, clock, model } = tuloy;
@@ -51,7 +51,7 @@ test('retries wait longer each time and stop at the hard limit; then the run end
   expect(recovery.map(({ time, taskId, cause, action, result, data }) => ({ time, taskId, cause, action, result, data }))).toEqual([
     { time: start, taskId: 'scripts', cause: 'invalid_output', action: 'retry', result: 'waiting', data: { do: 'retry', retry: 1, of: 2, waitMs: 2000 } },
     { time: start + 2000, taskId: 'scripts', cause: 'invalid_output', action: 'retry', result: 'waiting', data: { do: 'retry', retry: 2, of: 2, waitMs: 4000 } },
-    { time: start + 6000, taskId: 'scripts', cause: '2 of 2 retries used', action: 'escalate', result: 'escalated', data: null },
+    { time: start + 6000, taskId: 'scripts', cause: 'the backup model also failed', action: 'escalate', result: 'escalated', data: null },
     { time: start + 6000, taskId: null, cause: 'scripts failed: invalid_output', action: 'end', result: 'escalated', data: null },
   ]);
   // The bad output is never passed on.
@@ -227,12 +227,14 @@ test('a stalled or recovering task has a stuck reason made from its events, and 
     ['recovering', 'Script task stalled: no heartbeat for 20s. Retry 1 of 2 is running.'],
     ['stalled', 'Script task stalled: no heartbeat for 20s. Retry 2 of 2 in 4s.'],
     ['recovering', 'Script task stalled: no heartbeat for 20s. Retry 2 of 2 is running.'],
+    // After the retry limit the backup model takes the task (ticket 5) and finishes it.
+    ['recovering', 'Script task stalled: no heartbeat for 20s. Re-routed to backup model after 2 of 2 retries used.'],
   ]);
   expect(taskViews(store.tasks(runId), store.events(runId)).map((t) => [t.id, t.shownStatus, t.stuckReason])).toEqual([
     ['trends', 'done', null],
-    ['scripts', 'escalated', 'Script task stalled: no heartbeat for 20s. 2 of 2 retries used. The run ended as escalated.'],
-    ['review', 'waiting on dependency', null],
-    ['schedule', 'waiting on dependency', null],
+    ['scripts', 'done', null],
+    ['review', 'done', null],
+    ['schedule', 'done', null],
   ]);
 });
 
@@ -243,7 +245,7 @@ test.each([
   [
     'a model with no credits',
     { trend_scout: [new Error('This request requires more credits. Visit https://openrouter.ai/settings/keys/key-id-123.')] },
-    'Trend scout task failed: the model is not available (This request requires more credits. Visit [address removed]). A model outage is not retried. The run ended as escalated.',
+    'Trend scout task failed: the model is not available (This request requires more credits. Visit [address removed]). The backup model also failed. The run ended as escalated.',
   ],
 ])('the stuck reason after %s says the cause and what Tuloy did', async (_name, script, reason) => {
   const { conductor, store } = testTuloy({ script });

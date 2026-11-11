@@ -109,6 +109,10 @@ test('failures from before the stop count against the retry limit after the rest
     'retry waiting',
     'dispatch started',
     'validate invalid_output',
+    // ticket 5: after the retry limit the backup model gets the task one time; here it gives a bad output also
+    'reroute backup model',
+    'dispatch started',
+    'validate invalid_output',
     'escalate escalated',
   ]);
   expect(store.events(runId).filter((e) => e.action === 'retry').map((e) => e.data)).toMatchObject([{ retry: 1, of: 2, waitMs: 2000 }, { retry: 2, of: 2, waitMs: 4000 }]);

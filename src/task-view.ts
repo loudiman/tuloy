@@ -45,12 +45,14 @@ function stuckReason(task: Task, events: TuloyEvent[]): string | null {
   const mine = events.filter((e) => e.taskId === task.id);
   const failure = mine.findLast((e) => ['watch', 'validate', 'model_call', 'review'].includes(e.action) && e.result in whatFailed);
   if (!failure) return null;
-  const recovery = mine.findLast((e) => e.seq > failure.seq && (e.action === 'retry' || e.action === 'escalate'));
+  const recovery = mine.findLast((e) => e.seq > failure.seq && ['retry', 'reroute', 'escalate'].includes(e.action));
   const retry = recovery?.data as { retry: number; of: number; waitMs: number } | null;
   const did = !recovery
     ? ''
     : recovery.action === 'escalate'
       ? ` ${recovery.cause[0].toUpperCase()}${recovery.cause.slice(1)}. The run ended as escalated.`
-      : ` Retry ${retry!.retry} of ${retry!.of} ${task.status === 'recovering' ? 'is running' : `in ${retry!.waitMs / 1000}s`}.`;
+      : recovery.action === 'reroute'
+        ? ` Re-routed to ${recovery.result} after ${recovery.cause}.`
+        : ` Retry ${retry!.retry} of ${retry!.of} ${task.status === 'recovering' ? 'is running' : `in ${retry!.waitMs / 1000}s`}.`;
   return `${agentName[task.role]} task ${whatFailed[failure.result](failure)}.${did}`;
 }

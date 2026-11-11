@@ -57,9 +57,9 @@ test('in demo mode the presenter injects a timeout at the script task by default
   });
 });
 
-test('when retries run out, the run API shows the run as escalated with the stuck reason of the task', async () => {
+test('when all own models are down, the run API shows the run as escalated with the stuck reason of the task', async () => {
   await withServer(true, async (call) => {
-    for (let i = 0; i < 3; i++) await call('POST', '/api/injections', { task: 'trend_scout', kind: 'invalid_output' });
+    await call('POST', '/api/injections', { task: 'trend_scout', kind: 'all_models_outage' });
 
     const [, { runId }] = await call('POST', '/api/runs');
     const state = await endedRun(call, runId);
@@ -69,14 +69,14 @@ test('when retries run out, the run API shows the run as escalated with the stuc
       id: 'trends',
       status: 'escalated',
       shownStatus: 'escalated',
-      stuckReason: 'Trend scout task failed: its output did not match the schema. 2 of 2 retries used. The run ended as escalated.',
+      stuckReason: 'Trend scout task failed: the model is not available (demo: injected outage of all own models). The backup model also failed. The run ended as escalated.',
     });
     expect(state.tasks[1]).toMatchObject({ id: 'scripts', shownStatus: 'waiting on dependency', stuckReason: null });
   });
 });
 
 test.each([
-  ['a kind that is not built yet', { task: 'script', kind: 'primary_outage' }],
+  ['a kind that is not built yet', { task: 'script', kind: 'peer_silent' }],
   ['a kind that does not exist', { task: 'script', kind: 'meteor' }],
   ['no kind', {}],
   ['a task that is not an agent role', { task: 'janitor', kind: 'timeout' }],
