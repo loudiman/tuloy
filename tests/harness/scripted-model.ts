@@ -2,7 +2,7 @@ import type { LanguageModelV4CallOptions } from '@ai-sdk/provider';
 import { MockLanguageModelV4 } from 'ai/test';
 import type { Role } from '../../src/schemas.ts';
 
-/** One scripted answer: a value is returned as the model's JSON; an Error is thrown as the model's failure. */
+/** One scripted answer: a value (or a promise of one) is returned as the model's JSON; an Error is thrown as the model's failure. */
 export type Step = unknown;
 
 /**
@@ -30,7 +30,8 @@ export function scriptedModel(script: Partial<Record<Role, Step[]>> = {}) {
         .join('\n');
       calls.push({ role, prompt });
       const steps = left[role];
-      const step = steps?.length ? steps.shift() : goodOutput[role];
+      // A step may be a promise: the model then answers when the test resolves it.
+      const step = await (steps?.length ? steps.shift() : goodOutput[role]);
       if (step instanceof Error) throw step;
       return {
         content: [{ type: 'text', text: JSON.stringify(step) }],

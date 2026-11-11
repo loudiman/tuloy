@@ -7,7 +7,7 @@ import type { Store } from './store.ts';
 
 /** Serves the plain live page, its API, and the live event stream (server-sent events from the event log). */
 export function createServer({ store, conductor, owner }: { store: Store; conductor: Conductor; owner: string }) {
-  const peerServer = createPeerServer({ owner });
+  const peerServer = createPeerServer({ store, conductor, owner });
   return http.createServer(async (req, res) => {
     if (await peerServer.handle(req, res)) return;
     const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
