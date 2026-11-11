@@ -88,6 +88,39 @@ test('a peer on the allowed list sends one task for one agent role; the A2A task
   expect(sam.model.calls.map((c) => [c.role, JSON.parse(c.prompt)])).toEqual([['script', scriptInput]]);
 });
 
+test('a request with no key, a wrong key, or the key of a Tuloy that is not on the allowed list is refused and nothing runs', async () => {
+  const { sam } = await twoPeers();
+  // Mallory is a real Tuloy with its own key, but Sam never put it on the allowed list.
+  const mallory = await startTuloy('Mallory');
+  await allow(mallory.url, { name: 'Sam', address: sam.url, sendKey: 'key-from-mallory', acceptKey: 'key-from-sam-to-mallory' });
+
+  for (const key of [undefined, 'a-wrong-key', 'key-from-mallory', 'key-from-sam']) {
+    const stranger = await peerClient(sam.url, key);
+    await expect(stranger.send('script', scriptInput)).rejects.toThrow('401');
+  }
+  const raw = await fetch(`${sam.url}/a2a`, { method: 'POST', body: '{}' });
+
+  expect(raw.status).toBe(401);
+  expect(sam.model.calls).toEqual([]);
+  expect(sam.store.runs()).toEqual([]);
+});
+
+test('the input from the peer is checked against the input schema of the role before the agent runs', async () => {
+  const { sam } = await twoPeers();
+  const lou = await peerClient(sam.url, 'key-from-lou');
+
+  // The script agent needs trends. The reviewer's input is not the script agent's input.
+  const noTrends = await lou.send('script', { goal: SAMPLE_GOAL });
+  const noSuchRole = await lou.send('painter', scriptInput);
+
+  expect(noTrends.status?.state).toBe(TaskState.TASK_STATE_REJECTED);
+  expect(text(noTrends)).toContain('input schema of the script agent');
+  expect(text(noTrends)).toContain('trends');
+  expect(noSuchRole.status?.state).toBe(TaskState.TASK_STATE_REJECTED);
+  expect(sam.model.calls).toEqual([]);
+  expect(sam.store.runs()).toEqual([]);
+});
+
 test('the agent card is at the well-known address and lists a skill for each agent role', async () => {
   const sam = await startTuloy('Sam');
 
