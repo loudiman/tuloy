@@ -2,8 +2,6 @@ import { DatabaseSync } from 'node:sqlite';
 import type { PlannedTask } from './planner.ts';
 import type { Role } from './schemas.ts';
 
-export type Clock = { now(): number };
-
 export type RunStatus = 'running' | 'done' | 'escalated';
 export type TaskStatus =
   | 'queued'
@@ -48,7 +46,7 @@ export type Store = ReturnType<typeof openStore>;
 type Row = Record<string, any>;
 
 /** One SQLite file per Tuloy (or ':memory:'). The event log is append-only: there is no update or delete for events. */
-export function openStore(file: string, clock: Clock) {
+export function openStore(file: string, clock: { now(): number }) {
   const db = new DatabaseSync(file);
   db.exec(`
     CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY AUTOINCREMENT, goal TEXT NOT NULL, status TEXT NOT NULL, started_at INTEGER NOT NULL, ended_at INTEGER);

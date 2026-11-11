@@ -1,5 +1,6 @@
 import { generateText, NoObjectGeneratedError, NoOutputGeneratedError, Output, type LanguageModel } from 'ai';
 import type { z } from 'zod';
+import type { Failure } from './recovery-policy.ts';
 import { roles, type Role } from './schemas.ts';
 
 /** The first line of the system prompt is "ROLE: <role>"; the scripted test model reads it. */
@@ -13,8 +14,7 @@ const prompts: Record<Role, string> = {
     'You are the scheduler. Make a posting schedule for the scripts that passed. For each script return the script_id, a platform, a time with the +08:00 offset, and a reason. The timezone is Asia/Manila.',
 };
 
-export type Failure = 'invalid_output' | 'model_unavailable';
-export type AgentResult = { ok: true; output: unknown } | { ok: false; failure: Failure; detail: string };
+export type AgentResult = { ok: true; output: unknown } | { ok: false; failure: Failure };
 
 /** Role + checked input → checked output or a typed failure. It never throws. */
 export async function runAgent(role: Role, input: unknown, model: LanguageModel): Promise<AgentResult> {
@@ -29,9 +29,9 @@ export async function runAgent(role: Role, input: unknown, model: LanguageModel)
     });
     // Tuloy checks every output with its own schema in any case. The parse also drops fields that are not in the schema.
     const checked = schema.safeParse(result.output);
-    return checked.success ? { ok: true, output: checked.data } : { ok: false, failure: 'invalid_output', detail: checked.error.message };
+    return checked.success ? { ok: true, output: checked.data } : { ok: false, failure: { kind: 'invalid_output', detail: checked.error.message } };
   } catch (error) {
     const invalid = NoObjectGeneratedError.isInstance(error) || NoOutputGeneratedError.isInstance(error);
-    return { ok: false, failure: invalid ? 'invalid_output' : 'model_unavailable', detail: error instanceof Error ? error.message : String(error) };
+    return { ok: false, failure: { kind: invalid ? 'invalid_output' : 'model_unavailable', detail: error instanceof Error ? error.message : String(error) } };
   }
 }
