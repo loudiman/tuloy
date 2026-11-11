@@ -1,8 +1,10 @@
 /** The typed failures of one attempt of an agent. */
 export type Failure = {
-  kind: 'timeout' | 'missed_heartbeat' | 'invalid_output' | 'model_unavailable' | 'rate_limited' | 'peer_failed';
+  kind: 'timeout' | 'missed_heartbeat' | 'invalid_output' | 'model_unavailable' | 'rate_limited' | 'reviewer_rejection' | 'peer_failed';
   /** Plain words for the event log. */
   detail: string;
+  /** The raw text behind `detail`, when `detail` is a plain sentence made from it. It goes into the event data. */
+  raw?: string;
   /** Only for `rate_limited`: the wait that the model asked for. */
   retryAfterMs?: number;
   /** True when the attempt ran on the owner's backup model. The conductor sets it. */

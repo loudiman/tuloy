@@ -76,7 +76,6 @@ test('when all own models are down, the run API shows the run as escalated with 
 });
 
 test.each([
-  ['a kind that is not built yet', { task: 'script', kind: 'reviewer_rejection' }],
   ['a kind that does not exist', { task: 'script', kind: 'meteor' }],
   ['no kind', {}],
   ['a task that is not an agent role', { task: 'janitor', kind: 'timeout' }],

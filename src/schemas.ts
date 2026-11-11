@@ -15,8 +15,15 @@ const script = z.object({
 const review = z.object({
   script_id: z.string().min(1),
   verdict: z.enum(['pass', 'reject']),
+  /** 0 is the worst, 10 is the best. */
+  score: z.number().min(0).max(10),
   issues: z.array(z.string()),
+  /** For a rejected script: how to fix the issues. */
+  hints: z.array(z.string()),
 });
+
+/** What the script agent gets when the reviewer rejected its scripts: the issues and hints of each rejected script. */
+const reviewerHints = z.array(review.pick({ script_id: true, issues: true, hints: true }));
 
 const post = z.object({
   script_id: z.string().min(1),
@@ -33,7 +40,7 @@ const reviews = z.array(review).min(1);
 
 export const roles = {
   trend_scout: { input: z.object({ goal }), output: z.object({ trends }) },
-  script: { input: z.object({ goal, trends }), output: z.object({ scripts }) },
+  script: { input: z.object({ goal, trends, reviewer_hints: reviewerHints.optional() }), output: z.object({ scripts }) },
   reviewer: { input: z.object({ goal, scripts }), output: z.object({ reviews }) },
   scheduler: {
     input: z.object({ goal, scripts, reviews }),

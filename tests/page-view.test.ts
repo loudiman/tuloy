@@ -113,3 +113,7 @@ test('a run that ended as escalated has no stalled task: the server word stalled
   expect(shownStatus({ status: 'done', shownStatus: 'done' }, 'escalated')).toBe('done');
   expect(shownStatus({ status: 'rejected', shownStatus: 'stalled' }, 'running')).toBe('stalled');
 });
+
+test('a task that a peer sent is a plain row, not a recovery action', () => {
+  expect(timelineOf([event(1, 'scripts', 'peer_task', 'accepted for Lou', 'Lou sent a task for the script agent')], 'scripts')[0]).toMatchObject({ title: 'Peer task', kind: 'plain' });
+});

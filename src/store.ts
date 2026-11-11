@@ -127,7 +127,8 @@ export function openStore(file: string, clock: { now(): number }) {
     events(runId: number): TuloyEvent[] {
       return db.prepare('SELECT * FROM events WHERE run_id = ? ORDER BY seq').all(runId).map(toEvent);
     },
-    updateTask(runId: number, taskId: string, patch: { status?: TaskStatus; agent?: string; output?: unknown }) {
+    updateTask(runId: number, taskId: string, patch: { status?: TaskStatus; agent?: string; output?: unknown; input?: unknown }) {
+      if (patch.input !== undefined) db.prepare('UPDATE tasks SET input = ? WHERE run_id = ? AND id = ?').run(JSON.stringify(patch.input), runId, taskId);
       if (patch.status) db.prepare('UPDATE tasks SET status = ? WHERE run_id = ? AND id = ?').run(patch.status, runId, taskId);
       if (patch.agent) db.prepare('UPDATE tasks SET agent = ? WHERE run_id = ? AND id = ?').run(patch.agent, runId, taskId);
       if (patch.output !== undefined) db.prepare('UPDATE tasks SET output = ? WHERE run_id = ? AND id = ?').run(JSON.stringify(patch.output), runId, taskId);

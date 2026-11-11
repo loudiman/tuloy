@@ -91,7 +91,7 @@ const titles: Record<string, string> = {
   end: 'Run ended',
 };
 
-const recovery = /retry|re-?route|switch|backup|peer|recover/i;
+const recovery = /retry|re-?route|switch|backup|to_peer|recover/i;
 const trouble = /reject|invalid|unavailable|escalat|fail|timeout|timed|stall|refus|outage|error|missed|silent|limit/i;
 
 /** One row of the timeline. `kind` picks the mark of the row: a handoff, a recovery action, trouble, or a plain row. */

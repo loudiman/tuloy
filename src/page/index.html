@@ -12,11 +12,21 @@
 <body>
 <header class="bar">
   <p class="mark">Tuloy <span id="owner" class="owner"></span> <span id="demo-tag" class="tag tag-demo" hidden>Demo mode</span></p>
+  <nav class="nav" aria-label="Screens"><a href="/" aria-current="page">Runs</a><a href="/peers">Peers</a></nav>
+</header>
+
+<section class="starter" aria-label="Start a run">
+  <form id="goal-form" class="goal-form">
+    <label for="goal-input">Your goal</label>
+    <input id="goal-input" required maxlength="2000" autocomplete="off" placeholder="One sentence of work for the agents">
+    <button>Start this goal</button>
+  </form>
   <div class="sample">
     <p><span class="tag">Sample goal</span> <span id="sample-goal"></span></p>
     <button id="start" type="button">Start the sample goal</button>
   </div>
-</header>
+  <p id="start-note" class="start-note" role="status"></p>
+</section>
 
 <main>
   <section id="slate" class="slate" aria-live="polite">

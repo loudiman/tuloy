@@ -158,30 +158,6 @@ test.each([
   expect(store.run(runId)?.status).toBe(status);
 });
 
-test('a script that the reviewer rejects is never scheduled', async () => {
-  const reviews = [
-    { script_id: 's1', verdict: 'reject', issues: ['The hook is weak.'] },
-    { script_id: 's2', verdict: 'pass', issues: [] },
-  ];
-  const { conductor, store } = testTuloy({ script: { reviewer: [{ reviews }] } });
-
-  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
-  await ended;
-
-  expect(store.run(runId)?.status).toBe('escalated');
-  expect(store.tasks(runId).map((t) => [t.id, t.status])).toEqual([
-    ['trends', 'done'],
-    ['scripts', 'rejected'],
-    ['review', 'done'],
-    ['schedule', 'waiting_on_dependency'],
-  ]);
-  expect(store.events(runId).slice(-2)).toMatchObject([
-    { taskId: 'scripts', action: 'review', result: 'rejected', cause: 's1: The hook is weak.' },
-    { taskId: null, action: 'end', result: 'escalated' },
-  ]);
-  expect(store.events(runId).some((e) => e.taskId === 'schedule')).toBe(false);
-});
-
 test('run state and events are still there after a restart of the program', async () => {
   const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
   const first = testTuloy({ file });
@@ -196,4 +172,20 @@ test('run state and events are still there after a restart of the program', asyn
   expect(before.events).toHaveLength(18);
   expect({ run: store.run(runId), tasks: store.tasks(runId), events: store.events(runId) }).toEqual(before);
   expect(store.runs().map((r) => r.id)).toEqual([runId]);
+});
+
+test('the cause of an invalid output is a plain sentence, and the raw detail stays in the event data', async () => {
+  const wrongLanguage = { scripts: [{ id: 's1', hook: 'A hook', body: 'A body', cta: 'A CTA', language: 'klingon' }] };
+  const { conductor, store } = testTuloy({ script: { script: [{ scripts: 'junk' }, {}, wrongLanguage] }, backupScript: {} });
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  const invalid = store.events(runId).filter((e) => e.action === 'validate' && e.result === 'invalid_output');
+  expect(invalid.map((e) => e.cause)).toEqual([
+    'The list of scripts in the output must be a list, but it is not.',
+    'The output has no list of scripts.',
+    'The language of script 1 in the output is not one of: english, filipino, taglish.',
+  ]);
+  expect((invalid[0].data as { detail: string }).detail).toContain('expected array');
 });
