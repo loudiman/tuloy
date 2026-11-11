@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { SAMPLE_GOAL } from '../src/planner.ts';
 import type { Role } from '../src/schemas.ts';
+import { taskViews } from '../src/task-view.ts';
 import { goodOutput, type Step } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
@@ -45,4 +46,42 @@ test('a run that was stopped in the middle continues after a restart and ends as
   // The trend scout was done before the stop: no second model call, no second start.
   expect(model.calls.map((c) => c.role)).toEqual(['script', 'reviewer', 'scheduler']);
   expect(trail(tuloy, runId, 'trends').filter((line) => line === 'dispatch started')).toHaveLength(1);
+});
+
+test('a task that was running at the stop gets a stalled status, an event that names the restart, and normal recovery', async () => {
+  const file = newFile();
+  const runId = await stopInTheMiddle(file, 'dispatch started');
+
+  const tuloy = testTuloy({ file });
+  const { conductor, store, clock } = tuloy;
+  const restartedAt = clock.now();
+  // The state of the scripts task at the moment the conductor starts the wait for its retry.
+  let duringTheWait: unknown;
+  store.subscribe((e) => {
+    if (e.action === 'retry') duringTheWait = taskViews(store.tasks(runId), store.events(runId)).find((t) => t.id === 'scripts');
+  });
+
+  await conductor.continueRuns()[0].ended;
+
+  expect(duringTheWait).toMatchObject({
+    status: 'stalled_heartbeat',
+    shownStatus: 'stalled',
+    stuckReason: 'Script task stalled: Tuloy restarted while the task was in work. Retry 1 of 2 in 2s.',
+  });
+  expect(trail(tuloy, runId, 'scripts')).toEqual([
+    'assign script',
+    'handoff checked content stored',
+    'dispatch started',
+    // the stop was here
+    'watch missed_heartbeat',
+    'retry waiting',
+    'dispatch started',
+    'validate valid',
+    'review pass',
+  ]);
+  const events = store.events(runId);
+  expect(events.find((e) => e.action === 'restart')).toMatchObject({ taskId: null, result: 'continued', cause: 'Tuloy started again before this run ended', time: restartedAt });
+  expect(events.find((e) => e.action === 'watch')).toMatchObject({ taskId: 'scripts', cause: 'Tuloy restarted while the task was in work' });
+  expect(events.findLast((e) => e.action === 'dispatch' && e.taskId === 'scripts')).toMatchObject({ cause: 'retry 1 of 2', time: restartedAt + 2000 });
+  expect(store.run(runId)?.status).toBe('done');
 });

@@ -59,7 +59,10 @@ export function createConductor({ store, models, clock, limits }: { store: Store
       .runs()
       .filter((run) => run.status === 'running')
       .reverse()
-      .map((run) => ({ runId: run.id, ended: drive(run.id, true) }));
+      .map((run) => {
+        store.append({ runId: run.id, action: 'restart', cause: 'Tuloy started again before this run ended', result: 'continued' });
+        return { runId: run.id, ended: drive(run.id, true) };
+      });
   }
 
   async function drive(runId: number, afterRestart = false): Promise<void> {
