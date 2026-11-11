@@ -1,6 +1,7 @@
 import type { Role } from './schemas.ts';
 
-export type PlannedTask = { id: string; title: string; dependsOn: string[]; role: Role };
+/** `input` is set only on a task that a peer sent: the peer gives the input, no handoff does. */
+export type PlannedTask = { id: string; title: string; dependsOn: string[]; role: Role; input?: unknown };
 
 /** The labelled sample goal. The page starts it in one action. */
 export const SAMPLE_GOAL = 'Make short-video scripts and a posting schedule for a sari-sari store in Quezon City this week.';

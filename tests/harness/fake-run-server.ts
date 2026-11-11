@@ -3,11 +3,13 @@
  *
  *   node tests/harness/fake-run-server.ts [port] [delay in ms for each model call]
  *
- * Real clock, store in memory, demo mode on. The first run ends as escalated (the reviewer rejects the scripts);
- * each later run ends as done.
+ * Real clock, store in memory, demo mode on, default limits. The first run ends as escalated (the reviewer rejects
+ * the scripts); each later run ends as done. Use the demo injections on the page to see a recovery.
  */
+import { systemClock } from '../../src/clock.ts';
 import { createConductor } from '../../src/conductor.ts';
 import { createServer } from '../../src/server.ts';
+import { defaultLimits } from '../../src/settings.ts';
 import { openStore } from '../../src/store.ts';
 import { scriptedModel } from './scripted-model.ts';
 
@@ -27,8 +29,8 @@ model.doGenerate = async (options) => {
   return answer(options);
 };
 
-const store = openStore(':memory:', { now: Date.now });
-const conductor = createConductor({ store, models: { primary: model, backup: model } });
+const store = openStore(':memory:', systemClock);
+const conductor = createConductor({ store, models: { primary: model, backup: model }, clock: systemClock, limits: defaultLimits });
 createServer({ store, conductor, owner: 'Lou (scripted model, no real agent)', demo: true }).listen(port, '127.0.0.1', () => {
   console.log(`Tuloy with the scripted model: http://localhost:${port}`);
 });
