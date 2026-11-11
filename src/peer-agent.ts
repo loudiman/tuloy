@@ -20,11 +20,12 @@ export async function runPeerAgent(role: Skill, input: unknown, peer: Peer, clie
   const seconds = (ms: number) => `${Math.round(ms / 1000)}s`;
   // What the peer said goes into an event: cut it, and never with the key (the client removes it already).
   const said = (text: string) => text.replaceAll(peer.sendKey, '[key]').replace(/\.$/, '').slice(0, 300);
-  const fail = (kind: 'peer_failed' | 'timeout' | 'missed_heartbeat', detail: string): AgentResult => ({ ok: false, failure: { kind, detail } });
+  // `fast`: the peer did not take the task. The conductor may then ask the next peer on the allowed list.
+  const fail = (kind: 'peer_failed' | 'timeout' | 'missed_heartbeat', detail: string, fast = false): AgentResult => ({ ok: false, failure: { kind, detail, fast } });
   const call = { address: `${peer.address}/a2a`, key: peer.sendKey };
 
   // Demo mode: an injected peer gets no call. `peer_refuses` is a refusal at once; `peer_silent` is a task that stays in work.
-  if (injected === 'peer_refuses') return fail('peer_failed', `${peer.name} refused the task (demo: injected refusal)`);
+  if (injected === 'peer_refuses') return fail('peer_failed', `${peer.name} refused the task (demo: injected refusal)`, true);
   const silent: A2aAnswer | null = injected === 'peer_silent' ? { status: 'progress', taskId: 'demo: injected silent peer', contextId: null } : null;
 
   const started = clock.now();
@@ -40,10 +41,10 @@ export async function runPeerAgent(role: Skill, input: unknown, peer: Peer, clie
       } catch {}
       return check(role, output);
     }
-    if (answer.status === 'refused') return fail('peer_failed', `${peer.name} refused the task: ${said(answer.text)}`);
+    if (answer.status === 'refused') return fail('peer_failed', `${peer.name} refused the task: ${said(answer.text)}`, !polled);
     // A poll that did not reach the peer may clear up: the missed-heartbeat time decides. Every other failure is final.
     const noAnswer = answer.status === 'failed' && answer.failure === 'unreachable' && polled;
-    if (answer.status === 'failed' && !noAnswer) return fail('peer_failed', `${who} failed: ${said(answer.text)}`);
+    if (answer.status === 'failed' && !noAnswer) return fail('peer_failed', `${who} failed: ${said(answer.text)}`, !polled);
     if (answer.status === 'ask') {
       // A run has no person in the loop, so a question ends the step. The peer is told to stop.
       if (taskId) await client.cancel({ ...call, taskId });

@@ -11,6 +11,8 @@ export type Failure = {
   onBackup?: boolean;
   /** True when the attempt was step 3: the task was with a peer's agent, or no peer could take it. The conductor sets it. */
   onPeer?: boolean;
+  /** Only for an attempt at a peer: the peer did not take the task (it refused, it is over its limit, or it cannot be reached). The peer agent sets it. */
+  fast?: boolean;
   /** True when the attempt was step 4: the full goal was with a peer. The conductor sets it. Such a failure also has `onPeer`. */
   onGoal?: boolean;
 };
@@ -53,12 +55,14 @@ const rerouteToBackup: Step = (failure, history, { retries }) => {
 };
 
 /**
- * Step 3: re-route to the same agent in a peer's Tuloy, one time. It applies when the backup model failed also.
- * A failure with `onPeer` is the result 'the peer step failed'.
+ * Step 3: re-route to the same agent in a peer's Tuloy. It applies when the backup model failed also.
+ * When the first peer does not take the task (a fast failure), the next peer on the allowed list is asked: two peers at most.
+ * Every other failure with `onPeer` is the result 'the peer step failed': a silent peer is not followed by a second peer.
  */
 const rerouteToPeer: Step = (failure, history, _limits, { forPeer, peers }) => {
-  if (forPeer || peers === 0 || failure.onPeer || history.some((f) => f.onPeer)) return null;
-  return { do: 'peer', cause: 'the backup model also failed' };
+  const asked = [failure, ...history].filter((f) => f.onPeer).length;
+  if (forPeer || failure.onGoal || asked >= Math.min(2, peers) || (asked === 1 && !failure.fast)) return null;
+  return { do: 'peer', cause: asked ? 'the first peer did not take the task' : 'the backup model also failed' };
 };
 
 /**

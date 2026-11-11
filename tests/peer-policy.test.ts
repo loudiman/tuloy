@@ -22,3 +22,19 @@ test.each([
 ] as const)('%s', (_name, failure, history, work, action) => {
   expect(nextAction(failure, [...history], limits, work)).toEqual(action);
 });
+
+// ---- Review fix 9: a peer that does not take the task (a fast failure) → the next peer, two peers at most ----
+
+const fast = (kind: Failure['kind']): Failure => ({ kind, detail: 'x', onPeer: true, fast: true });
+const nextPeer = { do: 'peer', cause: 'the first peer did not take the task' };
+const before = [fail('model_unavailable'), onBackup('model_unavailable')];
+
+test.each([
+  ['the first peer refuses, is over its limit or cannot be reached: the next peer is asked', fast('peer_failed'), before, { forPeer: false, peers: 2 }, nextPeer],
+  ['with one peer on the allowed list there is no next peer', fast('peer_failed'), before, { forPeer: false, peers: 1 }, goal],
+  ['two peers at most: when the second does not take the task, the third is not asked', fast('peer_failed'), [...before, fast('peer_failed')], { forPeer: false, peers: 3 }, goal],
+  ['a silent peer ends the peer step: the next peer is not asked', onPeer('timeout'), before, { forPeer: false, peers: 2 }, goal],
+  ['a peer that took the task and failed ends the peer step', onPeer('peer_failed'), before, { forPeer: false, peers: 2 }, goal],
+] as const)('%s', (_name, failure, history, work, action) => {
+  expect(nextAction(failure, [...history], limits, work)).toEqual(action);
+});

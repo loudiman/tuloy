@@ -254,8 +254,9 @@ export function createConductor({
         store.append({ runId, taskId, action: 'reroute', cause: action.cause, result: 'backup model', data: action });
         model = 'backup';
       } else if (action.do === 'peer') {
-        // Step 3: the same checked input goes to the same agent of a peer. ponytail: the first peer of the allowed list gets it; try the others in turn when one peer is not enough.
-        peer = store.peers()[0]!;
+        // Step 3: the same checked input goes to the same agent of a peer: the first peer of the allowed list that this task did not ask yet.
+        const asked = store.events(runId).flatMap((e) => (e.taskId === taskId && e.action === 'reroute' ? [(e.data as { peer?: string } | null)?.peer] : []));
+        peer = store.peers().find((p) => !asked.includes(p.name)) ?? store.peers()[0]!;
         model = 'peer';
         const agent = peerAgentName(peer, task.role);
         store.append({ runId, taskId, action: 'reroute', cause: action.cause, result: agent, data: { ...action, peer: peer.name } });

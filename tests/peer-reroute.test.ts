@@ -352,3 +352,45 @@ test('a script from a peer that the reviewer rejects is a failure of the peer st
   expect(peer.calls.map((c) => c.move)).toEqual(['send', 'send']);
   expect(store.events(runId).some((e) => e.taskId === 'schedule')).toBe(false);
 });
+
+// ---- Review fix 9: the next peer is asked when the first does not take the task ----
+
+/** Own models down for the script task; Ana and Maria on the allowed list. Ana is the first (the list is in the order of the names). */
+function twoPeersOnTheList(answers: A2aAnswer[]) {
+  const tuloy = ownModelsDown({ peer: answers });
+  tuloy.store.addPeer({ name: 'Ana', address: 'https://ana.example', sendKey: 'the-key-that-ana-accepts-from-this-tuloy', acceptKey: 'the-key-from-ana' });
+  return tuloy;
+}
+const askedAt = ({ peer }: Tuloy) => peer.calls.map((c) => `${c.move} ${new URL(c.call.address).hostname}`);
+
+test.each<[string, A2aAnswer]>([
+  ['refuses', { status: 'refused', text: 'I do not take this work.', ...ids }],
+  ['is over its limit', { status: 'refused', text: 'Lou is at the limit of 20 tasks per hour.', ...ids }],
+  ['cannot be reached', { status: 'failed', failure: 'unreachable', text: 'The outside agent could not be reached.', taskId: null, contextId: null }],
+])('when the first peer %s, the next peer on the allowed list gets the task, and the run ends as done', async (_name, first) => {
+  const tuloy = twoPeersOnTheList([first, working, result(goodOutput.script)]);
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(trail(tuloy, runId, 'scripts').slice(7)).toEqual(["reroute Ana's script agent", 'dispatch started', 'peer_call peer_failed', "reroute Maria's script agent", 'dispatch started', 'validate valid', 'review pass']);
+  expect(task(tuloy, runId, 'scripts')).toMatchObject({ status: 'done', agent: "Maria's script agent", output: goodOutput.script });
+  expect(store.events(runId).findLast((e) => e.action === 'reroute')).toMatchObject({ cause: 'the first peer did not take the task', data: { peer: 'Maria' } });
+  expect(askedAt(tuloy)).toEqual(['send ana.example', 'send maria.example', 'read maria.example']);
+  // Each peer got its own key.
+  expect(tuloy.peer.calls.map((c) => c.call.key)).toEqual(['the-key-that-ana-accepts-from-this-tuloy', KEY, KEY]);
+});
+
+test('a first peer that is silent ends the peer step at the task time limit: the next peer does not get the task', async () => {
+  const tuloy = twoPeersOnTheList([working]);
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(trail(tuloy, runId, 'scripts').filter((line) => line.startsWith('reroute') || line.startsWith('watch') || line.startsWith('goal'))).toEqual(['reroute backup model', "reroute Ana's script agent", 'watch timeout', 'goal_to_peer Ana']);
+  expect(askedAt(tuloy).some((line) => line.endsWith('maria.example'))).toBe(false);
+});
