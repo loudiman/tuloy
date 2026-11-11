@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { SAMPLE_GOAL } from '../src/planner.ts';
 import { goodOutput } from './harness/scripted-model.ts';
@@ -173,4 +176,20 @@ test('a script that the reviewer rejects is never scheduled', async () => {
     { taskId: null, action: 'end', result: 'escalated' },
   ]);
   expect(store.events(runId).some((e) => e.taskId === 'schedule')).toBe(false);
+});
+
+test('run state and events are still there after a restart of the program', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
+  const first = testTuloy({ file });
+  const { runId, ended } = first.conductor.startRun(SAMPLE_GOAL);
+  await ended;
+  const before = { run: first.store.run(runId), tasks: first.store.tasks(runId), events: first.store.events(runId) };
+  first.store.close();
+
+  const { store } = testTuloy({ file });
+
+  expect(before.run?.status).toBe('done');
+  expect(before.events).toHaveLength(18);
+  expect({ run: store.run(runId), tasks: store.tasks(runId), events: store.events(runId) }).toEqual(before);
+  expect(store.runs().map((r) => r.id)).toEqual([runId]);
 });
