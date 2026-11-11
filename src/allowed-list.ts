@@ -64,7 +64,7 @@ export function createAllowedList({ store, owner, peerTasksPerHour }: { store: S
 
       // There is no login on loopback, so a web page that the owner has open could call this API. The browser names that page in Origin.
       const origin = req.headers.origin;
-      if (path.startsWith('/api/') && req.method !== 'GET' && origin && URL.parse(origin)?.host !== req.headers.host) {
+      if (/^\/api\/(peers|invites)\b/.test(path) && req.method !== 'GET' && origin && URL.parse(origin)?.host !== req.headers.host) {
         return json(403, { error: 'Only this Tuloy\'s own page can change the allowed list.' });
       }
 
