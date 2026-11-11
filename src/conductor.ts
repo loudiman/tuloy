@@ -137,13 +137,19 @@ export function createConductor({
     // One turn of this loop is one attempt. The earlier failures of the task are the history for the recovery policy.
     // After a restart they come from the event log, so that a restart does not give the task new retries.
     const mine = afterRestart ? store.events(runId).filter((e) => e.taskId === taskId) : [];
-    const rerouted = mine.findLast((e) => e.action === 'reroute')?.seq;
+    const reroutes = mine.filter((e) => e.action === 'reroute');
+    const rerouted = reroutes[0]?.seq;
+    // A `reroute` event with a peer in its data: the task was with that peer's agent from there on.
+    const toPeer = reroutes.find((e) => (e.data as { peer?: string } | null)?.peer)?.seq;
     const history: Failure[] = mine
       .filter((e) => e.result in failureAction && e.action === failureAction[e.result as Failure['kind']])
-      .map((e) => ({ kind: e.result as Failure['kind'], detail: e.cause, onBackup: rerouted !== undefined && e.seq > rerouted }));
+      .map((e) => {
+        const onPeer = toPeer !== undefined && e.seq > toPeer;
+        return { kind: e.result as Failure['kind'], detail: e.cause, onBackup: rerouted !== undefined && e.seq > rerouted && !onPeer, onPeer };
+      });
     let output: unknown;
     // The backup model is in use from the `reroute` event on. After a restart that also comes from the event log.
-    let model: 'primary' | 'backup' | 'peer' = rerouted !== undefined ? 'backup' : 'primary';
+    let model: 'primary' | 'backup' | 'peer' = toPeer !== undefined ? 'peer' : rerouted !== undefined ? 'backup' : 'primary';
     // Step 3: the peer that has the task.
     let peer: Peer | undefined;
     let allDown: string | undefined;

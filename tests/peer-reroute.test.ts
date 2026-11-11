@@ -1,4 +1,7 @@
+import { mkdtempSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import type { A2aAnswer } from '../src/peer-client.ts';
 import { SAMPLE_GOAL } from '../src/planner.ts';
@@ -305,4 +308,23 @@ test('in demo mode the injection API takes a silent peer and a peer that refuses
     server.closeAllConnections();
     server.close();
   }
+});
+
+test('after a restart, a task that was with a peer is not sent to a peer again and does not go back to the own models', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
+  const first = ownModelsDown({ file, peer: [working] });
+  // The program stops when the peer has the task: the third dispatch of the scripts task.
+  let dispatches = 0;
+  first.store.subscribe((e) => e.taskId === 'scripts' && e.action === 'dispatch' && ++dispatches === 3 && first.store.close());
+  const { runId, ended } = first.conductor.startRun(SAMPLE_GOAL);
+  await ended.catch(() => {}); // the stopped conductor dies on the closed store
+
+  const tuloy = testTuloy({ file, peer: [result(goodOutput.script)] });
+  await tuloy.conductor.continueRuns()[0].ended;
+
+  // The stop is the failure of the one attempt at the peer.
+  expect(trail(tuloy, runId, 'scripts').slice(-4)).toEqual(["reroute Maria's script agent", 'dispatch started', 'watch missed_heartbeat', 'escalate escalated']);
+  expect(tuloy.store.events(runId).find((e) => e.action === 'escalate')?.cause).toBe('the re-route to a peer failed');
+  expect([tuloy.model.calls, tuloy.backup.calls, tuloy.peer.calls]).toEqual([[], [], []]);
+  expect(tuloy.store.run(runId)?.status).toBe('escalated');
 });
