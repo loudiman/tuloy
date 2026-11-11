@@ -201,3 +201,39 @@ test('the agent card is at the well-known address and lists a skill for each age
   expect(card.skills.map((s: any) => s.id)).toEqual(['trend_scout', 'script', 'reviewer', 'scheduler']);
   expect(card.supportedInterfaces).toEqual([{ url: `${sam.url}/a2a`, protocolBinding: 'JSONRPC', protocolVersion: '1.0' }]);
 });
+
+// ---- Ticket 11: invites and the peers screen ----
+
+const post = (url: string, body?: unknown) => fetch(url, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+const makeInvite = async (url: string) => ((await (await post(`${url}/api/invites`)).json()) as { link: string }).link;
+const acceptInvite = (url: string, link: string) => post(`${url}/api/invites/accept`, { link });
+
+/** Sam makes an invite and Lou accepts it. */
+async function invited(samOptions: Parameters<typeof startTuloy>[1] = {}) {
+  const sam = await startTuloy('Sam', samOptions);
+  const lou = await startTuloy('Lou');
+  const link = await makeInvite(sam.url);
+  const accepted = await acceptInvite(lou.url, link);
+  return { sam, lou, link, accepted };
+}
+
+test('an accepted invite puts each Tuloy on the allowed list of the other, and a task crosses in both directions', async () => {
+  const { sam, lou, accepted } = await invited();
+
+  expect(accepted.status).toBe(201);
+  expect(await accepted.json()).toEqual({ name: 'Sam', address: sam.url });
+  expect(sam.store.peers().map((p) => [p.name, p.address])).toEqual([['Lou', lou.url]]);
+  expect(lou.store.peers().map((p) => [p.name, p.address])).toEqual([['Sam', sam.url]]);
+
+  // Each Tuloy sends with the key that it got in the exchange.
+  const toSam = await peerClient(sam.url, lou.store.peers()[0]!.sendKey);
+  const toLou = await peerClient(lou.url, sam.store.peers()[0]!.sendKey);
+  const atSam = await toSam.ended((await toSam.send('script', scriptInput)).id);
+  const atLou = await toLou.ended((await toLou.send('trend_scout', { goal: SAMPLE_GOAL })).id);
+
+  expect(atSam.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+  expect(JSON.parse(text(atSam))).toEqual(goodOutput.script);
+  expect(atLou.status?.state).toBe(TaskState.TASK_STATE_COMPLETED);
+  expect(sam.store.runs()).toMatchObject([{ forPeer: 'Lou', status: 'done' }]);
+  expect(lou.store.runs()).toMatchObject([{ forPeer: 'Sam', status: 'done' }]);
+});

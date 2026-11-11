@@ -3,6 +3,7 @@ import type http from 'node:http';
 import { AGENT_CARD_PATH, A2A_VERSION_HEADER, AgentCard, Message, Task, TaskState } from '@a2a-js/sdk';
 import { AgentEvent, type AgentExecutor, DefaultRequestHandler, InMemoryTaskStore, JsonRpcTransportHandler, ServerCallContext, validateVersion } from '@a2a-js/sdk/server';
 import { z } from 'zod';
+import { createAllowedList, readJson } from './allowed-list.ts';
 import type { Conductor } from './conductor.ts';
 import { roles, type Role } from './schemas.ts';
 import type { Store } from './store.ts';
@@ -90,12 +91,14 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
     async cancelTask() {},
   };
 
+  const allowedList = createAllowedList({ store, owner });
   let a2a: { card: AgentCard; transport: JsonRpcTransportHandler } | undefined;
 
   return {
     async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
       const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
       const path = new URL(req.url ?? '/', 'http://tuloy').pathname;
+      if (await allowedList.handle(req, res)) return true;
       // ponytail: the address is the loopback socket of the first request. A public address needs a setting.
       a2a ??= (() => {
         const made = card(`http://${req.socket.localAddress}:${req.socket.localPort}`);
@@ -132,18 +135,4 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
       return false;
     },
   };
-}
-
-/** The JSON body of a request, or undefined when it is not JSON or is larger than 1 MB. */
-async function readJson(req: http.IncomingMessage): Promise<unknown> {
-  let body = '';
-  for await (const chunk of req) {
-    body += chunk;
-    if (body.length > 1_000_000) return undefined;
-  }
-  try {
-    return JSON.parse(body);
-  } catch {
-    return undefined;
-  }
 }

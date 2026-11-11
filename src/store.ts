@@ -69,6 +69,7 @@ export function openStore(file: string, clock: Clock) {
     CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL, run_id INTEGER NOT NULL, task_id TEXT,
       cause TEXT NOT NULL, action TEXT NOT NULL, result TEXT NOT NULL, data TEXT);
     CREATE TABLE IF NOT EXISTS peers (name TEXT PRIMARY KEY, address TEXT NOT NULL, send_key TEXT NOT NULL, accept_key TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS invites (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, used_at INTEGER);
   `);
   // A data file from before the peer server has no such columns.
   for (const column of ['runs ADD COLUMN for_peer TEXT', 'tasks ADD COLUMN input TEXT']) {
@@ -160,6 +161,14 @@ export function openStore(file: string, clock: Clock) {
     /** How many runs this Tuloy started for the peer in the last hour. */
     peerRunsInLastHour(name: string): number {
       return Number(db.prepare('SELECT COUNT(*) AS n FROM runs WHERE for_peer = ? AND started_at > ?').get(name, clock.now() - 60 * 60 * 1000)!.n);
+    },
+    /** Saves an open invite. Only the hash of its token is stored. */
+    createInvite(tokenHash: string) {
+      db.prepare('INSERT INTO invites (token_hash, expires_at) VALUES (?, ?)').run(tokenHash, clock.now());
+    },
+    /** True when there is such an invite. */
+    inviteIsOpen(tokenHash: string): boolean {
+      return !!db.prepare('SELECT 1 FROM invites WHERE token_hash = ?').get(tokenHash);
     },
     close() {
       db.close();
