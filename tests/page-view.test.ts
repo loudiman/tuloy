@@ -106,3 +106,10 @@ test('retries and re-routes are marked as recovery actions; the whole run shows 
     ['Run ended', 'trouble'],
   ]);
 });
+
+test('a run that ended as escalated has no stalled task: the server word stalled, recovering or running shows as escalated', () => {
+  expect(shownStatus({ status: 'rejected', shownStatus: 'stalled' }, 'escalated')).toBe('escalated');
+  expect(shownStatus({ status: 'recovering', shownStatus: 'recovering' }, 'escalated')).toBe('escalated');
+  expect(shownStatus({ status: 'done', shownStatus: 'done' }, 'escalated')).toBe('done');
+  expect(shownStatus({ status: 'rejected', shownStatus: 'stalled' }, 'running')).toBe('stalled');
+});

@@ -22,8 +22,7 @@ const shownWords: Record<string, ShownStatus> = {
 
 /** The plain status word of a task. The server's word wins; without it, the page works the word out from the stored status. */
 export function shownStatus(task: { status: string; shownStatus?: string | null }, runStatus: string): string {
-  if (task.shownStatus) return task.shownStatus;
-  const word = shownWords[task.status] ?? task.status.replaceAll('_', ' ');
+  const word = task.shownStatus || (shownWords[task.status] ?? task.status.replaceAll('_', ' '));
   // A run that ended as escalated has no recovery left: the task that was stuck is where the run stopped.
   return runStatus === 'escalated' && (word === 'stalled' || word === 'recovering' || word === 'running') ? 'escalated' : word;
 }
