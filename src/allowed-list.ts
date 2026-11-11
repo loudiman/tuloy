@@ -62,12 +62,6 @@ export function createAllowedList({ store, owner, peerTasksPerHour }: { store: S
       // The link, opened in a browser: say what to do with it. It does not use up the invite.
       if (req.method === 'GET' && token) return (res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(`This is an invite to the Tuloy of ${owner}. Paste the link into your own Tuloy, on the Peers page.`), true);
 
-      // There is no login on loopback, so a web page that the owner has open could call this API. The browser names that page in Origin.
-      const origin = req.headers.origin;
-      if (/^\/api\/(peers|invites)\b/.test(path) && req.method !== 'GET' && origin && URL.parse(origin)?.host !== req.headers.host) {
-        return json(403, { error: 'Only this Tuloy\'s own page can change the allowed list.' });
-      }
-
       if (req.method === 'GET' && path === '/api/peers') {
         const peers = store.peers().map(async (peer) => ({
           name: peer.name,

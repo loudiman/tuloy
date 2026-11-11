@@ -368,7 +368,7 @@ test('an invite cannot replace a peer that is on the allowed list: the same name
   expect(lou.store.peers().map((p) => p.name)).toEqual(['Sam']);
 });
 
-test('a text that is not an invite link, a link to a Tuloy that does not answer, and a request from another web page are refused', async () => {
+test('a text that is not an invite link, a link to a Tuloy that does not answer, and a call from another web page are refused', async () => {
   const sam = await startTuloy('Sam');
 
   const notALink = await acceptInvite(sam.url, 'hello');

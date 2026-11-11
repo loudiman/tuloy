@@ -1,3 +1,4 @@
+import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { expect, test } from 'vitest';
 import { SAMPLE_GOAL } from '../src/planner.ts';
@@ -6,11 +7,11 @@ import type { TuloyEvent } from '../src/store.ts';
 import { goodOutput } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
-async function startTestServer(options: { demo?: boolean } = {}) {
+async function startTestServer(options: { demo?: boolean; host?: string } = {}) {
   const { conductor, store } = testTuloy();
   const server = createServer({ store, conductor, owner: 'Lou', ...options });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  return { server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  return { server, store, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
 }
 
 /** Reads the live event stream until the run ends. */
@@ -131,6 +132,53 @@ test('the dashboard has a field for a goal that the owner types, and a link to t
     const peers = await (await fetch(`${url}/peers`)).text();
     expect(peers).toContain('href="/page/style.css"');
     expect(peers).toContain('href="/"');
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+// ---- Review fix 1: only this Tuloy's own page can call the owner's API ----
+
+/** One call with the headers as given: `fetch` cannot set Host. Returns the status. */
+function rawCall(url: string, method: string, path: string, headers: Record<string, string>, body = ''): Promise<number> {
+  const { hostname, port } = new URL(url);
+  return new Promise((resolve, reject) => {
+    const request = http.request({ hostname, port, method, path, headers }, (response) => {
+      response.resume();
+      resolve(response.statusCode!);
+    });
+    request.on('error', reject);
+    request.end(body);
+  });
+}
+
+test('a web page of another origin cannot start a run, inject a failure or change the allowed list; a name that points at this Tuloy (DNS rebinding) cannot either', async () => {
+  const { server, url, store } = await startTestServer({ demo: true });
+  const { host, port } = new URL(url);
+  try {
+    const otherPage = { host, origin: 'https://evil.example' };
+    // DNS rebinding: the page of evil.example calls its own name, which now points at 127.0.0.1. Origin and Host agree.
+    const rebound = { host: `evil.example:${port}`, origin: `http://evil.example:${port}` };
+    const noOrigin = { host: `evil.example:${port}` };
+    for (const headers of [otherPage, rebound, noOrigin]) {
+      expect([
+        await rawCall(url, 'POST', '/api/runs', headers),
+        await rawCall(url, 'POST', '/api/injections', headers, '{"kind":"timeout"}'),
+        await rawCall(url, 'DELETE', '/api/injections', headers),
+        await rawCall(url, 'POST', '/api/invites', headers),
+        await rawCall(url, 'POST', '/api/peers', headers, JSON.stringify({ name: 'Evil', address: 'https://evil.example', sendKey: 'k' })),
+        await rawCall(url, 'DELETE', '/api/peers/Lou', headers),
+      ]).toEqual([403, 403, 403, 403, 403, 403]);
+    }
+    expect([store.runs(), store.injections(), store.peers()]).toEqual([[], [], []]);
+
+    // This Tuloy's own page, by both names of this machine, and a call with no Origin (curl).
+    expect(await rawCall(url, 'POST', '/api/runs', { host, origin: url })).toBe(201);
+    expect(await rawCall(url, 'POST', '/api/runs', { host: `localhost:${port}`, origin: `http://localhost:${port}` })).toBe(201);
+    expect(await rawCall(url, 'POST', '/api/runs', { host })).toBe(201);
+    // A GET is not refused: the agent card and an opened invite link are for everybody.
+    expect(await rawCall(url, 'GET', '/api/runs', otherPage)).toBe(200);
   } finally {
     server.closeAllConnections();
     server.close();

@@ -27,9 +27,19 @@ const pageFiles: Record<string, { file: URL; type: string }> = {
 export function createServer({ store, conductor, owner, peerTasksPerHour = 20, demo = false }: { store: Store; conductor: Conductor; owner: string; peerTasksPerHour?: number; demo?: boolean }) {
   const peerServer = createPeerServer({ store, conductor, owner, peerTasksPerHour });
   return http.createServer(async (req, res) => {
-    if (await peerServer.handle(req, res)) return;
     const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
     const path = new URL(req.url ?? '/', 'http://tuloy').pathname;
+    // There is no login, so a web page that the owner has open in the same browser could call the owner's API.
+    // Each call that changes something must name this Tuloy's own address in Host (a name of another site that points here,
+    // DNS rebinding, does not), and its Origin, when the browser sends one, must be that same address.
+    // Not checked: the A2A endpoint (the key is the proof) and the answer to an invite (the token is the proof).
+    if (req.method !== 'GET' && path !== '/a2a' && !path.startsWith('/invite/')) {
+      const host = req.headers.host;
+      const own = ['localhost', '127.0.0.1'].map((name) => `${name}:${req.socket.localPort}`);
+      const origin = req.headers.origin;
+      if (!host || !own.includes(host) || (origin !== undefined && URL.parse(origin)?.host !== host)) return json(403, { error: 'Only this Tuloy\'s own page can do this.' });
+    }
+    if (await peerServer.handle(req, res)) return;
     const runId = Number(/^\/api\/runs\/(\d+)$/.exec(path)?.[1]);
 
     const pageFile = req.method === 'GET' ? pageFiles[path] : undefined;
