@@ -24,8 +24,23 @@ const pageFiles: Record<string, { file: URL; type: string }> = {
 };
 
 /** Serves the dashboard, its API, the A2A surface, and the live event stream (server-sent events from the event log). */
-export function createServer({ store, conductor, owner, peerTasksPerHour = 20, demo = false }: { store: Store; conductor: Conductor; owner: string; peerTasksPerHour?: number; demo?: boolean }) {
-  const peerServer = createPeerServer({ store, conductor, owner, peerTasksPerHour });
+/** `peerAllowLocal` is the setting TULOY_PEER_ALLOW_LOCAL: it permits an invite and an agent card at a plain-http address of this same machine. */
+export function createServer({
+  store,
+  conductor,
+  owner,
+  peerTasksPerHour = 20,
+  demo = false,
+  peerAllowLocal = false,
+}: {
+  store: Store;
+  conductor: Conductor;
+  owner: string;
+  peerTasksPerHour?: number;
+  demo?: boolean;
+  peerAllowLocal?: boolean;
+}) {
+  const peerServer = createPeerServer({ store, conductor, owner, peerTasksPerHour, allowLocal: peerAllowLocal });
   return http.createServer(async (req, res) => {
     const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
     const path = new URL(req.url ?? '/', 'http://tuloy').pathname;

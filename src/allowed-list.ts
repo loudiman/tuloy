@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type http from 'node:http';
 import { AGENT_CARD_PATH } from '@a2a-js/sdk';
 import { z } from 'zod';
+import { A2aStop, createPeerFetch } from './peer-client.ts';
 import { peersPage } from './peers-page.ts';
 import type { Store } from './store.ts';
 
@@ -17,16 +18,6 @@ const inviteResult = z.object({ name: peerName, key: z.string().min(20).max(200)
 const newPeer = z.object({ name: peerName, address: webAddress, sendKey: z.string().min(1), acceptKey: z.string().min(1).optional() });
 /** The part of an agent card that the peers screen shows. */
 const cardSkills = z.object({ skills: z.array(z.object({ name: z.string().max(200) })).max(100) });
-
-/** What a peer or outside agent lends: the names of the skills on its agent card. Null when the card cannot be read. */
-async function lends(address: string): Promise<string[] | null> {
-  try {
-    const card = await fetch(`${address}/${AGENT_CARD_PATH}`, { signal: AbortSignal.timeout(3000) });
-    return cardSkills.parse(await card.json()).skills.map((skill) => skill.name);
-  } catch {
-    return null;
-  }
-}
 
 /** The one part of a key that the screen can show: its last 4 characters, and nothing of a short key. */
 const keyEnd = (key: string) => (key.length >= 16 ? key.slice(-4) : '');
@@ -48,8 +39,21 @@ const hash = (token: string) => createHash('sha256').update(token).digest('hex')
  * The owner's side of the allowed list: read it, add to it, remove from it, and invites. `handle` answers false when the request is not for it.
  * Keys travel only in request and response bodies between the two Tuloys. They are never in a link, an event or an answer to the page.
  */
-export function createAllowedList({ store, owner, peerTasksPerHour }: { store: Store; owner: string; peerTasksPerHour: number }) {
+export function createAllowedList({ store, owner, peerTasksPerHour, allowLocal }: { store: Store; owner: string; peerTasksPerHour: number; allowLocal: boolean }) {
   const onList = (name: string) => store.peers().some((peer) => peer.name === name);
+  // Every call to another owner's address goes through the address guard of the peer client: https only, no private or
+  // local range, no redirect. `allowLocal` (TULOY_PEER_ALLOW_LOCAL) permits plain http to this same machine.
+  const peerFetch = createPeerFetch({ allowLocal });
+
+  /** What a peer or outside agent lends: the names of the skills on its agent card. Null when the card cannot be read. */
+  async function lends(address: string): Promise<string[] | null> {
+    try {
+      const card = await peerFetch(`${address}/${AGENT_CARD_PATH}`, { signal: AbortSignal.timeout(3000) });
+      return cardSkills.parse(await card.json()).skills.map((skill) => skill.name);
+    } catch {
+      return null;
+    }
+  }
   return {
     async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
       const json = (status: number, body: unknown) => (res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body)), true);
@@ -102,9 +106,12 @@ export function createAllowedList({ store, owner, peerTasksPerHour }: { store: S
         let answer: Response | undefined;
         let result: z.infer<typeof inviteResult> | undefined;
         try {
-          answer = await fetch(link, { method: 'POST', body: JSON.stringify({ name: owner, address: self, key: acceptKey }), signal: AbortSignal.timeout(10_000) });
+          // The key that this Tuloy will accept goes in the body, so the link must pass the address guard first.
+          answer = await peerFetch(link, { method: 'POST', body: JSON.stringify({ name: owner, address: self, key: acceptKey }), signal: AbortSignal.timeout(10_000) });
           result = inviteResult.safeParse(await answer.json()).data;
-        } catch {}
+        } catch (error) {
+          if (error instanceof A2aStop && error.failure === 'address') return json(400, { error: `That invite link cannot be used: ${error.message.replace(/^[^:]*: /, '')}` });
+        }
         if (answer?.status === 410) return json(410, { error: NOT_OPEN });
         if (answer?.status === 409) return json(409, { error: `The other Tuloy has a peer with the name ${owner} on its allowed list. Its owner must remove that entry first. The invite is still open.` });
         if (!answer?.ok || !result) return json(502, { error: 'The Tuloy that made the invite did not answer as a Tuloy. Check the link and that the other Tuloy is on.' });

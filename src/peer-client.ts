@@ -112,7 +112,7 @@ export interface A2aClient {
 }
 
 /** Stops a call with our own words. */
-class A2aStop extends Error {
+export class A2aStop extends Error {
   readonly failure: A2aFailure;
   constructor(failure: A2aFailure, text: string) {
     super(text);
@@ -308,10 +308,13 @@ const failed = (failure: A2aFailure, text: string): A2aAnswer => ({
 });
 
 /**
- * The real client. Each move runs its own SDK client, so no call shares state.
- * `allowLocal` permits plain http to this same machine; it is off by default.
+ * A fetch with the address guard, for every call that goes to another owner's
+ * address: the A2A moves, the answer to an invite, and the read of an agent card.
+ * It refuses an address that is not https or that points at a private or local
+ * range, checks the name again in the connection's own lookup, and follows no
+ * redirect. A refusal is an `A2aStop` with the failure `address`.
  */
-export function createPeerClient({ allowLocal = false }: { allowLocal?: boolean } = {}): A2aClient {
+export function createPeerFetch({ allowLocal = false }: { allowLocal?: boolean } = {}) {
   /** Runs for each connection to a name, so the checked address is the one used. */
   const guardedLookup: LookupFunction = (host, options, done) => {
     dns.lookup(host, { ...options, all: true }, (error, addresses) => {
@@ -339,12 +342,28 @@ export function createPeerClient({ allowLocal = false }: { allowLocal?: boolean 
     pipelining: 0,
   });
 
-  const guardedFetch = (async (input: string, init: object) => {
+  return (async (input: string, init: object = {}) => {
     try {
-      const response = await undiciFetch(input, {
+      const problem = addressProblem(input, allowLocal);
+      if (problem) throw new A2aStop("address", `The address is refused: ${problem}.`);
+      return await undiciFetch(input, { ...init, dispatcher, redirect: "error" });
+    } catch (error) {
+      throw stopOf(error);
+    }
+  }) as unknown as (input: string, init?: RequestInit) => Promise<Response>;
+}
+
+/**
+ * The real client. Each move runs its own SDK client, so no call shares state.
+ * `allowLocal` permits plain http to this same machine; it is off by default.
+ */
+export function createPeerClient({ allowLocal = false }: { allowLocal?: boolean } = {}): A2aClient {
+  const peerFetch = createPeerFetch({ allowLocal });
+
+  const guardedFetch = (async (input: string, init: RequestInit) => {
+    try {
+      const response = await peerFetch(input, {
         ...init,
-        dispatcher,
-        redirect: "error",
         signal: AbortSignal.timeout(A2A_CALL_TIMEOUT_MS),
       });
       if (response.status === 401 || response.status === 403) {

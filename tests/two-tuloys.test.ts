@@ -20,7 +20,7 @@ afterEach(() => {
 
 async function startTuloy(owner: string, { sameMachine = true, ...options }: Parameters<typeof testTuloy>[0] & { sameMachine?: boolean; peerTasksPerHour?: number } = {}) {
   const tuloy = testTuloy({ ...options, peerClient: createPeerClient({ allowLocal: sameMachine }) });
-  const server = createServer({ store: tuloy.store, conductor: tuloy.conductor, owner, peerTasksPerHour: options.peerTasksPerHour });
+  const server = createServer({ store: tuloy.store, conductor: tuloy.conductor, owner, peerTasksPerHour: options.peerTasksPerHour, peerAllowLocal: true });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   stops.push(() => {
     server.closeAllConnections();

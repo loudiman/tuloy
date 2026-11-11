@@ -13,10 +13,10 @@ afterEach(() => {
   for (const stop of stops.splice(0)) stop();
 });
 
-/** One real Tuloy on a free port, with the scripted model. */
-async function startTuloy(owner: string, options: Parameters<typeof testTuloy>[0] & { peerTasksPerHour?: number } = {}) {
+/** One real Tuloy on a free port, with the scripted model. The same-machine setting (TULOY_PEER_ALLOW_LOCAL) is on unless `sameMachine` is false. */
+async function startTuloy(owner: string, options: Parameters<typeof testTuloy>[0] & { peerTasksPerHour?: number; sameMachine?: boolean } = {}) {
   const tuloy = testTuloy(options);
-  const server = createServer({ store: tuloy.store, conductor: tuloy.conductor, owner, peerTasksPerHour: options.peerTasksPerHour });
+  const server = createServer({ store: tuloy.store, conductor: tuloy.conductor, owner, peerTasksPerHour: options.peerTasksPerHour, peerAllowLocal: options.sameMachine ?? true });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   stops.push(() => {
     server.closeAllConnections();
@@ -400,4 +400,42 @@ test('the peers screen is its own page at /peers, with a link to the page of the
   expect(answer.headers.get('content-type')).toContain('text/html');
   expect(html).toContain('<title>Tuloy: peers</title>');
   expect(html).toContain('href="/"');
+});
+
+// ---- Review fix 5: the invite and the agent card go through the address guard of the peer client ----
+
+test('with the same-machine setting off, an invite link to a plain-http or private address is refused before anything is sent, and the invite stays open', async () => {
+  const sam = await startTuloy('Sam');
+  const lou = await startTuloy('Lou', { sameMachine: false });
+  const link = await makeInvite(sam.url);
+
+  const plainHttp = await acceptInvite(lou.url, link);
+  const privateRange = await acceptInvite(lou.url, 'https://10.0.0.7/invite/abc');
+  const metadata = await acceptInvite(lou.url, 'https://169.254.169.254/invite/abc');
+
+  expect([plainHttp.status, privateRange.status, metadata.status]).toEqual([400, 400, 400]);
+  expect(((await plainHttp.json()) as any).error).toBe('That invite link cannot be used: it is not https.');
+  expect(((await privateRange.json()) as any).error).toBe('That invite link cannot be used: it points at a private or local range.');
+  // Sam's Tuloy got no key from Lou: nobody is on a list, and the invite still works for a Tuloy that may use this machine.
+  expect([sam.store.peers(), lou.store.peers()]).toEqual([[], []]);
+  expect((await acceptInvite((await startTuloy('Ana')).url, link)).status).toBe(201);
+});
+
+test('with the same-machine setting on, only this machine is permitted over plain http: a link to another host is still refused', async () => {
+  const lou = await startTuloy('Lou');
+
+  const otherHost = await acceptInvite(lou.url, 'http://tuloy.example/invite/abc');
+
+  expect(otherHost.status).toBe(400);
+  expect(((await otherHost.json()) as any).error).toBe('That invite link cannot be used: it is not https.');
+});
+
+test('with the same-machine setting off, the agent card of a peer at a local address is not read', async () => {
+  const sam = await startTuloy('Sam', { sameMachine: false });
+  const lou = await startTuloy('Lou');
+  await allow(sam.url, { name: 'Lou', address: lou.url, sendKey: 'key-from-sam', acceptKey: 'key-from-lou' });
+
+  const list = (await (await fetch(`${sam.url}/api/peers`)).json()) as any;
+
+  expect(list.peers).toMatchObject([{ name: 'Lou', lends: null }]);
 });

@@ -28,7 +28,7 @@ const digest = (key: string) => createHash('sha256').update(key).digest();
  * The peer server: the allowed list API, the agent card and the A2A endpoint of one Tuloy.
  * `handle` answers false when the request is not for it.
  */
-export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: { store: Store; conductor: Conductor; owner: string; peerTasksPerHour: number }) {
+export function createPeerServer({ store, conductor, owner, peerTasksPerHour, allowLocal }: { store: Store; conductor: Conductor; owner: string; peerTasksPerHour: number; allowLocal: boolean }) {
   const card = (address: string) =>
     AgentCard.fromJSON({
       name: `Tuloy of ${owner}`,
@@ -101,7 +101,7 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
     async cancelTask() {},
   };
 
-  const allowedList = createAllowedList({ store, owner, peerTasksPerHour });
+  const allowedList = createAllowedList({ store, owner, peerTasksPerHour, allowLocal });
   let a2a: { card: AgentCard; transport: JsonRpcTransportHandler } | undefined;
 
   return {
