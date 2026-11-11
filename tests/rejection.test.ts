@@ -1,4 +1,7 @@
+import { mkdtempSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { nextAction, type Failure } from '../src/recovery-policy.ts';
 import { createServer } from '../src/server.ts';
@@ -161,4 +164,31 @@ test('demo mode: an injected reviewer rejection sends the script back one time, 
     server.closeAllConnections();
     server.close();
   }
+});
+
+test('after a restart in the middle of the rewrite, the rejection still counts as a failure and the hints are still in the input', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
+  // The program dies when the script agent starts its second attempt, the one after the rejection.
+  const before = testTuloy({ file, script: { reviewer: [rejection] } });
+  let starts = 0;
+  before.store.subscribe((e) => {
+    if (e.taskId === 'scripts' && e.action === 'dispatch' && ++starts === 2) before.store.close();
+  });
+  const { runId, ended } = before.conductor.startRun(SAMPLE_GOAL);
+  await ended.catch(() => {});
+
+  const tuloy = testTuloy({ file });
+  await Promise.all(tuloy.conductor.continueRuns().map((c) => c.ended));
+
+  expect(tuloy.store.run(runId)?.status).toBe('done');
+  // The rejection used retry 1; the stop uses retry 2.
+  expect(tuloy.store.events(runId).filter((e) => e.action === 'retry').map((e) => [e.cause, (e.data as { retry: number }).retry])).toEqual([
+    ['reviewer_rejection', 1],
+    ['missed_heartbeat', 2],
+  ]);
+  expect(tuloy.model.calls.map((c) => [c.role, 'reviewer_hints' in JSON.parse(c.prompt)])).toEqual([
+    ['script', true],
+    ['reviewer', false],
+    ['scheduler', false],
+  ]);
 });

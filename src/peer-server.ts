@@ -3,6 +3,7 @@ import type http from 'node:http';
 import { AGENT_CARD_PATH, A2A_VERSION_HEADER, AgentCard, Message, Task, TaskState } from '@a2a-js/sdk';
 import { AgentEvent, type AgentExecutor, DefaultRequestHandler, InMemoryTaskStore, JsonRpcTransportHandler, ServerCallContext, validateVersion } from '@a2a-js/sdk/server';
 import { z } from 'zod';
+import { createAllowedList, readJson } from './allowed-list.ts';
 import type { Conductor } from './conductor.ts';
 import { roles, type Role } from './schemas.ts';
 import type { Store } from './store.ts';
@@ -19,8 +20,6 @@ const skillWords: Record<Role, string> = {
 /** What a peer sends, as the JSON text of one A2A message. The result comes back as the JSON text of one artifact. */
 const peerMessage = z.object({ skill: z.enum(roleNames), input: z.unknown() });
 const HOW_TO_SEND = 'Send JSON text: { "skill": "<agent role>", "input": { ... } }. The agent card lists the agent roles.';
-
-const newPeer = z.object({ name: z.string().min(1).max(100), address: z.url(), sendKey: z.string().min(1), acceptKey: z.string().min(1) });
 
 const digest = (key: string) => createHash('sha256').update(key).digest();
 
@@ -90,12 +89,14 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
     async cancelTask() {},
   };
 
+  const allowedList = createAllowedList({ store, owner, peerTasksPerHour });
   let a2a: { card: AgentCard; transport: JsonRpcTransportHandler } | undefined;
 
   return {
     async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
       const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
       const path = new URL(req.url ?? '/', 'http://tuloy').pathname;
+      if (await allowedList.handle(req, res)) return true;
       // ponytail: the address is the loopback socket of the first request. A public address needs a setting.
       a2a ??= (() => {
         const made = card(`http://${req.socket.localAddress}:${req.socket.localPort}`);
@@ -103,14 +104,6 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
       })();
 
       if (req.method === 'GET' && path === `/${AGENT_CARD_PATH}`) return (json(200, AgentCard.toJSON(a2a.card)), true);
-
-      if (req.method === 'GET' && path === '/api/peers') return (json(200, { peers: store.peers().map(({ name, address }) => ({ name, address })) }), true);
-      if (req.method === 'POST' && path === '/api/peers') {
-        const peer = newPeer.safeParse(await readJson(req));
-        if (!peer.success) return (json(400, { error: 'a peer needs a name, an address, a sendKey and an acceptKey' }), true);
-        store.addPeer(peer.data);
-        return (json(201, { name: peer.data.name, address: peer.data.address }), true);
-      }
 
       if (req.method === 'POST' && path === '/a2a') {
         // The key is the proof of who sends. Only a key from the allowed list gets past this line.
@@ -132,18 +125,4 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
       return false;
     },
   };
-}
-
-/** The JSON body of a request, or undefined when it is not JSON or is larger than 1 MB. */
-async function readJson(req: http.IncomingMessage): Promise<unknown> {
-  let body = '';
-  for await (const chunk of req) {
-    body += chunk;
-    if (body.length > 1_000_000) return undefined;
-  }
-  try {
-    return JSON.parse(body);
-  } catch {
-    return undefined;
-  }
 }

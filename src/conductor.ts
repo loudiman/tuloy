@@ -1,12 +1,12 @@
 import type { LanguageModel } from 'ai';
 import type { z } from 'zod';
-import { runAgent, type AgentResult } from './agent-runner.ts';
+import { runAgent } from './agent-runner.ts';
 import type { Clock } from './clock.ts';
 import { planTaskGraph } from './planner.ts';
 import { nextAction, type Failure } from './recovery-policy.ts';
 import { roles, type Role } from './schemas.ts';
 import type { Limits } from './settings.ts';
-import type { Store, TaskStatus } from './store.ts';
+import type { Store, Task, TaskStatus } from './store.ts';
 
 export type Conductor = ReturnType<typeof createConductor>;
 
@@ -31,9 +31,12 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     }
   }
 
-  /** For each running run: the earlier failures of each task, and a reviewer rejection that waits for the recovery of the script task. */
-  const memory = new Map<number, { history: Record<string, Failure[]>; rejection?: { taskId: string; failure: Failure } }>();
-  const remember = (runId: number) => memory.get(runId) ?? memory.set(runId, { history: {} }).get(runId)!;
+  /** A reviewer rejection that waits for recovery: the rejection is the last event of the task, so no retry and no escalation came after it. */
+  function pendingRejection(runId: number, task: Task): Failure | undefined {
+    if (task.status !== 'rejected') return undefined;
+    const last = store.events(runId).findLast((e) => e.taskId === task.id);
+    return last?.action === 'review' && last.result === 'rejected' ? { kind: 'reviewer_rejection', detail: last.cause } : undefined;
+  }
 
   /** Stores the task graph and starts the run. `ended` resolves when the run is done or escalated; it never rejects. */
   function startRun(goal: string): { runId: number; ended: Promise<void> } {
@@ -54,11 +57,29 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     return { runId, ended: drive(runId) };
   }
 
-  async function drive(runId: number): Promise<void> {
+  /**
+   * Continues every run that was not finished when Tuloy stopped. Call it one time at start-up, before new work comes in.
+   * A task that was in the middle of its work at the stop is treated as stalled and goes through recovery. Done tasks are not run again.
+   */
+  function continueRuns(): { runId: number; ended: Promise<void> }[] {
+    return store
+      .runs()
+      .filter((run) => run.status === 'running')
+      .reverse()
+      .map((run) => {
+        store.append({ runId: run.id, action: 'restart', cause: 'Tuloy started again before this run ended', result: 'continued' });
+        return { runId: run.id, ended: drive(run.id, true) };
+      });
+  }
+
+  async function drive(runId: number, afterRestart = false): Promise<void> {
     try {
+      if (afterRestart) {
+        for (const task of store.tasks(runId)) if (!isWaiting(task.status) && task.status !== 'done') await startTask(runId, task.id, true);
+      }
       while (store.run(runId)?.status === 'running') {
         const tasks = store.tasks(runId);
-        const next = tasks.find((t) => (isWaiting(t.status) || t.status === 'rejected') && t.dependsOn.every((d) => tasks.find((x) => x.id === d)?.status === 'done'));
+        const next = tasks.find((t) => (isWaiting(t.status) || pendingRejection(runId, t)) && t.dependsOn.every((d) => tasks.find((x) => x.id === d)?.status === 'done'));
         if (!next) return endRun(runId, 'done', 'all tasks are done');
         await startTask(runId, next.id);
       }
@@ -69,7 +90,6 @@ export function createConductor({ store, models, clock, limits }: { store: Store
 
   function endRun(runId: number, status: 'done' | 'escalated', cause: string) {
     store.endRun(runId, status);
-    memory.delete(runId);
     store.append({ runId, action: 'end', cause, result: status });
   }
 
@@ -77,7 +97,7 @@ export function createConductor({ store, models, clock, limits }: { store: Store
    * Starts one task now and resolves when the task has ended. The conductor uses this for every start.
    * A start is rejected, with an event, when a task it depends on is not done, when the task is not waiting, or when the run has ended.
    */
-  async function startTask(runId: number, taskId: string): Promise<'done' | 'rejected' | 'escalated'> {
+  async function startTask(runId: number, taskId: string, afterRestart = false): Promise<'done' | 'rejected' | 'escalated'> {
     const run = store.run(runId);
     const tasks = store.tasks(runId);
     const task = tasks.find((t) => t.id === taskId);
@@ -85,17 +105,16 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     const deps = task.dependsOn.map((id) => tasks.find((t) => t.id === id)!);
     const notDone = deps.filter((d) => d.status !== 'done').map((d) => d.id);
     // A script that the reviewer rejected starts again here: the rejection is its failure, and the loop below recovers from it.
-    const mind = remember(runId);
-    let rejection = mind.rejection?.taskId === taskId ? mind.rejection.failure : undefined;
-    const why = notDone.length ? `it depends on ${notDone.join(', ')}, not done yet` : !isWaiting(task.status) && !rejection ? `the task is ${task.status}` : run.status !== 'running' ? `the run is ${run.status}` : null;
+    const rejection = pendingRejection(runId, task);
+    const why = notDone.length ? `it depends on ${notDone.join(', ')}, not done yet` : !isWaiting(task.status) && !afterRestart && !rejection ? `the task is ${task.status}` : run.status !== 'running' ? `the run is ${run.status}` : null;
     if (why) {
       store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'rejected' });
       return 'rejected';
     }
 
-    const agent = task.role;
-    if (rejection) mind.rejection = undefined;
-    else {
+    const fresh = !afterRestart && !rejection;
+    if (fresh) {
+      const agent = task.role;
       store.updateTask(runId, taskId, { agent, status: 'running' });
       store.append({ runId, taskId, action: 'assign', cause: 'the task is ready', result: agent, data: { model: 'primary' } });
     }
@@ -103,19 +122,33 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     // The next agent gets only the checked fields of its role's input schema.
     const input = roles[task.role].input.parse(Object.assign({ goal: run.goal }, task.input, ...deps.map((d) => d.output)));
     const handoff = (cause: string) => deps.length && store.append({ runId, taskId, action: 'handoff', cause, result: 'checked content stored', data: { from: deps.map((d) => d.id), content: input } });
-    if (!rejection) handoff(`${deps.map((d) => d.id).join(', ')} done`);
+    if (fresh) handoff(`${deps.map((d) => d.id).join(', ')} done`);
     // One turn of this loop is one attempt. The earlier failures of the task are the history for the recovery policy.
-    const history = (mind.history[taskId] ??= []);
+    // After a restart or a rejection they come from the event log, so that neither gives the task new retries.
+    const history: Failure[] = fresh
+      ? []
+      : store
+          .events(runId)
+          .filter((e) => e.taskId === taskId)
+          .flatMap((e) => {
+            const kind = e.action === 'review' && e.result === 'rejected' ? 'reviewer_rejection' : e.result in failureAction && e.action === failureAction[e.result as Failure['kind']] ? (e.result as Failure['kind']) : null;
+            return kind ? [{ kind, detail: e.cause }] : [];
+          });
+    if (rejection) history.pop(); // the rejection in work now is not an earlier failure
     let output: unknown;
+    // After a restart or a rejection the first turn makes no attempt: the stop or the rejection is the failure, and recovery starts from it.
+    let stopped: Failure | null = rejection ? rejection : afterRestart ? { kind: 'missed_heartbeat', detail: 'Tuloy restarted while the task was in work' } : null;
     for (;;) {
-      if (!rejection) store.append({ runId, taskId, action: 'dispatch', cause: history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done', result: 'started' });
+      if (!stopped) store.append({ runId, taskId, action: 'dispatch', cause: history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done', result: 'started' });
       // Demo mode: a pending injection for this agent is used now, one time.
-      const injected = rejection ? undefined : store.takeInjection(task.role);
+      const injected = stopped ? undefined : store.takeInjection(task.role);
       if (injected) store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
       // An injected rejection of the script acts in the review of that script: the script agent hands it to the reviewer.
       if (injected === 'reviewer_rejection' && task.role === 'script') store.addInjection('reviewer', injected);
       // The time limit starts when the agent has its slot, not while it waits in line.
-      const result: AgentResult = rejection ? { ok: false, failure: rejection } : await withModelSlot(() =>
+      const result = stopped
+        ? { ok: false as const, failure: stopped }
+        : await withModelSlot(() =>
         runAgent(task.role, input, models.primary, {
           clock,
           limits,
@@ -123,14 +156,14 @@ export function createConductor({ store, models, clock, limits }: { store: Store
           onHeartbeat: () => store.append({ runId, taskId, action: 'heartbeat', cause: 'the agent waits for the model', result: 'alive' }),
         }),
       );
+      stopped = null;
       if (result.ok) {
         output = result.output;
         break;
       }
       const { failure } = result;
       // The `review` event of a rejection is in the log already.
-      if (!rejection) store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind });
-      rejection = undefined;
+      if (failure.kind !== 'reviewer_rejection') store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind });
       store.updateTask(runId, taskId, { status: failedStatus[failure.kind] });
 
       const action = nextAction(failure, history, limits);
@@ -170,8 +203,6 @@ export function createConductor({ store, models, clock, limits }: { store: Store
         const reviewer_hints = rejected.map(({ script_id, issues, hints }) => ({ script_id, issues, hints }));
         store.updateTask(runId, scriptTaskId, { input: { ...(scriptTask.input as object), reviewer_hints } });
         store.updateTask(runId, taskId, { status: 'waiting_on_dependency' });
-        mind.history[taskId] = [];
-        mind.rejection = { taskId: scriptTaskId, failure: { kind: 'reviewer_rejection', detail } };
         return 'done';
       }
       store.append({ runId, taskId: scriptTaskId, action: 'review', cause: 'the reviewer passed every script', result: 'pass' });
@@ -179,7 +210,7 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     return 'done';
   }
 
-  return { startRun, startPeerTask, startTask };
+  return { startRun, startPeerTask, startTask, continueRuns };
 }
 
 const isWaiting = (status: string) => status === 'queued' || status === 'waiting_on_dependency';
