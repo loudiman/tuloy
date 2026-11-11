@@ -151,6 +151,9 @@ export function createConductor({
       const from = (store.events(runId).findLast((e) => e.taskId === d.id && e.action === 'reroute')?.data as { peer?: string } | null)?.peer;
       return from ? [{ from, task: d.id, keys: Object.keys(d.output as object) }] : [];
     });
+    // Hints that a peer's reviewer wrote are outside text for the script agent.
+    const hintsFrom = (task.input as { hints_from?: string } | null)?.hints_from;
+    if (hintsFrom) outside.push({ from: hintsFrom, task: tasks.find((t) => t.role === 'reviewer')?.id ?? taskId, keys: ['reviewer_hints'] });
     // What a peer sent is outside text too: the goal of a run for a peer, and the whole input of one task that a peer sent.
     if (run.forPeer) outside.push({ from: run.forPeer, task: taskId, keys: ['goal', ...(deps.length ? [] : Object.keys((task.input ?? {}) as object))] });
     // One turn of this loop is one attempt. The earlier failures of the task are the history for the recovery policy.
@@ -269,11 +272,15 @@ export function createConductor({
     }
     // The writes of a rejection are one transaction: a stop cannot leave a review task that is done without the rejection that it found.
     const rejects = task.role === 'reviewer' && (output as z.infer<typeof skills.reviewer.output>).reviews.some((r) => r.verdict === 'reject');
-    return rejects ? store.transaction(() => finish(runId, task, deps, output)) : finish(runId, task, deps, output);
+    const fromPeer = model === 'peer' ? peer?.name : undefined;
+    return rejects ? store.transaction(() => finish(runId, task, deps, output, fromPeer)) : finish(runId, task, deps, output, fromPeer);
   }
 
-  /** The writes at the end of a task that gave a valid output. For the reviewer: the pass, or the rejection of the script task. */
-  function finish(runId: number, task: Task, deps: Task[], output: unknown): 'done' | 'escalated' {
+  /**
+   * The writes at the end of a task that gave a valid output. For the reviewer: the pass, or the rejection of the script task.
+   * `fromPeer` is the peer whose agent gave the output, when the task was re-routed to a peer.
+   */
+  function finish(runId: number, task: Task, deps: Task[], output: unknown, fromPeer?: string): 'done' {
     const taskId = task.id;
     store.append({ runId, taskId, action: 'validate', cause: `the output matches the ${task.role} schema`, result: 'valid' });
     store.updateTask(runId, taskId, { status: 'done', output });
@@ -287,15 +294,14 @@ export function createConductor({
       if (rejected.length) {
         const detail = rejected.map((r) => `${r.script_id}: ${r.issues.join(' ')}`).join('; ');
         store.append({ runId, taskId: scriptTaskId, action: 'review', cause: detail, result: 'rejected', data: { reviews } });
+        // A review for a peer has no script task in this run. The rejection is a valid review: the review task is done,
+        // and the peer gets the verdict, the issues and the hints as the result, so that its conductor can recover.
+        if (!scriptTask) return 'done';
         store.updateTask(runId, scriptTaskId, { status: 'rejected' });
-        // A review for a peer has no script task in this run: nothing can be written again.
-        if (!scriptTask) {
-          endRun(runId, 'escalated', `the reviewer rejected ${scriptTaskId}`);
-          return 'escalated';
-        }
         // The script task starts again with the issues and hints in its input, and the review waits for it again.
+        // `hints_from` names the peer whose reviewer wrote them: the script agent then reads them as outside text.
         const reviewer_hints = rejected.map(({ script_id, issues, hints }) => ({ script_id, issues, hints }));
-        store.updateTask(runId, scriptTaskId, { input: { ...(scriptTask.input as object), reviewer_hints } });
+        store.updateTask(runId, scriptTaskId, { input: { ...(scriptTask.input as object), reviewer_hints, hints_from: fromPeer } });
         store.updateTask(runId, taskId, { status: 'waiting_on_dependency' });
         return 'done';
       }
