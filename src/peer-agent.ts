@@ -14,7 +14,7 @@ export const peerAgentName = (peer: Peer, role: Role) => `${peer.name}'s ${role.
  * It never throws. Every way to no result is a failure: `peer_failed` (refused, failed, a question), `timeout` (the task
  * stays in work until the task time limit), `missed_heartbeat` (the peer stopped answering the polls), `invalid_output` (a bad payload).
  */
-export async function runPeerAgent(role: Role, input: unknown, peer: Peer, client: A2aClient, { clock, limits, onHeartbeat }: RunOptions): Promise<AgentResult> {
+export async function runPeerAgent(role: Role, input: unknown, peer: Peer, client: A2aClient, { clock, limits, onHeartbeat, injected }: RunOptions): Promise<AgentResult> {
   const who = peerAgentName(peer, role);
   const seconds = (ms: number) => `${Math.round(ms / 1000)}s`;
   // What the peer said goes into an event: cut it, and never with the key (the client removes it already).
@@ -22,9 +22,13 @@ export async function runPeerAgent(role: Role, input: unknown, peer: Peer, clien
   const fail = (kind: 'peer_failed' | 'timeout' | 'missed_heartbeat', detail: string): AgentResult => ({ ok: false, failure: { kind, detail } });
   const call = { address: `${peer.address}/a2a`, key: peer.sendKey };
 
+  // Demo mode: an injected peer gets no call. `peer_refuses` is a refusal at once; `peer_silent` is a task that stays in work.
+  if (injected === 'peer_refuses') return fail('peer_failed', `${peer.name} refused the task (demo: injected refusal)`);
+  const silent: A2aAnswer | null = injected === 'peer_silent' ? { status: 'progress', taskId: 'demo: injected silent peer', contextId: null } : null;
+
   const started = clock.now();
   let lastBeat = started;
-  let answer: A2aAnswer = await client.send({ ...call, callId: randomUUID(), text: JSON.stringify({ skill: role, input }) });
+  let answer: A2aAnswer = silent ?? await client.send({ ...call, callId: randomUUID(), text: JSON.stringify({ skill: role, input }) });
   const taskId = answer.taskId;
   let polled = false;
   for (;;) {
@@ -58,10 +62,10 @@ export async function runPeerAgent(role: Role, input: unknown, peer: Peer, clien
           ? fail('missed_heartbeat', `${peer.name}'s Tuloy did not answer for ${seconds(now - lastBeat)}`)
           : null;
     if (stalled) {
-      await client.cancel({ ...call, taskId }); // nobody waits for the task now
+      if (!silent) await client.cancel({ ...call, taskId }); // nobody waits for the task now
       return stalled;
     }
-    answer = await client.read({ ...call, taskId });
+    answer = silent ?? (await client.read({ ...call, taskId }));
     polled = true;
   }
 }

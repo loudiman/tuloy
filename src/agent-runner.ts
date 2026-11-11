@@ -27,6 +27,7 @@ export type RunOptions = {
   /**
    * Demo mode: `timeout` makes the agent silent (no model call, no heartbeat); `invalid_output` makes its output fail the schema;
    * `primary_outage` and `all_models_outage` make the attempt fail as a model outage, with no model call.
+   * For the attempt at a peer: `peer_refuses` and `peer_silent` (see `runPeerAgent`).
    */
   injected?: string;
   /** The fields of the input that came from a peer's agent. The agent reads them as outside text: data in a label, not instructions. */

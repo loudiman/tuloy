@@ -1,6 +1,8 @@
+import type { AddressInfo } from 'node:net';
 import { expect, test } from 'vitest';
 import type { A2aAnswer } from '../src/peer-client.ts';
 import { SAMPLE_GOAL } from '../src/planner.ts';
+import { createServer } from '../src/server.ts';
 import { taskViews } from '../src/task-view.ts';
 import { goodOutput } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
@@ -212,4 +214,95 @@ test('work that came from a peer is never sent to another peer: with both models
   expect(store.run(runId)).toMatchObject({ forPeer: 'Lou', status: 'escalated' });
   expect(trail(tuloy, runId, 'scripts').slice(-3)).toEqual(['dispatch started', 'model_call model_unavailable', 'escalate escalated']);
   expect(peer.calls).toEqual([]);
+});
+
+// ---- Demo mode: a peer that refuses, a silent peer ----
+
+/** A Tuloy with good models and Maria on the allowed list. The presenter's injections make the failures. */
+function demoTuloy() {
+  const tuloy = testTuloy({ peer: [result(goodOutput.script)] });
+  tuloy.store.addPeer({ name: 'Maria', address: 'https://maria.example', sendKey: KEY, acceptKey: 'the-key-from-maria' });
+  return tuloy;
+}
+
+test('an injected peer that refuses: the peer step fails with no call to the peer, and the run ends as escalated', async () => {
+  const tuloy = demoTuloy();
+  const { conductor, store, peer } = tuloy;
+  // The order of the two injections does not matter: the attempt on the own model never takes the one for the peer.
+  store.addInjection('script', 'peer_refuses');
+  store.addInjection('script', 'all_models_outage');
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(trail(tuloy, runId, 'scripts').slice(2)).toEqual([
+    'dispatch started',
+    'injection all_models_outage',
+    'model_call model_unavailable',
+    'reroute backup model',
+    'dispatch started',
+    'model_call model_unavailable',
+    "reroute Maria's script agent",
+    'dispatch started',
+    'injection peer_refuses',
+    'peer_call peer_failed',
+    'escalate escalated',
+  ]);
+  expect(stuckReason(tuloy, runId)).toBe('Script task failed: Maria refused the task (demo: injected refusal). The re-route to a peer failed. The run ended as escalated.');
+  expect(peer.calls).toEqual([]);
+  expect(store.injections()).toEqual([]);
+});
+
+test('an injected silent peer: no call to the peer, the task stays in work until the time limit, and the run ends as escalated', async () => {
+  const tuloy = demoTuloy();
+  const { conductor, store, peer } = tuloy;
+  store.addInjection('script', 'all_models_outage');
+  store.addInjection('script', 'peer_silent');
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  const events = scriptsEvents(tuloy, runId);
+  const injected = events.find((e) => e.result === 'peer_silent')!;
+  expect(injected).toMatchObject({ action: 'injection', cause: 'demo: the presenter injected this failure' });
+  expect(events.slice(-2).map((e) => [e.action, e.result, e.cause, e.time - injected.time])).toEqual([
+    ['watch', 'timeout', "Maria's script agent gave no result in 60s", 60_000],
+    ['escalate', 'escalated', 'the re-route to a peer failed', 60_000],
+  ]);
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(peer.calls).toEqual([]);
+});
+
+test('an injection for the peer waits when the task does not reach the peer step', async () => {
+  const tuloy = demoTuloy();
+  const { conductor, store, model } = tuloy;
+  store.addInjection('script', 'peer_silent');
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(model.calls.map((c) => c.role)).toEqual(['trend_scout', 'script', 'reviewer', 'scheduler']);
+  expect(store.events(runId).some((e) => e.action === 'injection')).toBe(false);
+  expect(store.injections()).toMatchObject([{ task: 'script', kind: 'peer_silent' }]);
+});
+
+test('in demo mode the injection API takes a silent peer and a peer that refuses', async () => {
+  const tuloy = testTuloy();
+  const server = createServer({ store: tuloy.store, conductor: tuloy.conductor, owner: 'Lou', demo: true });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const post = (body: unknown) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/injections`, { method: 'POST', body: JSON.stringify(body) });
+  try {
+    const answers = [await post({ kind: 'peer_silent' }), await post({ task: 'reviewer', kind: 'peer_refuses' })];
+
+    expect(answers.map((a) => a.status)).toEqual([201, 201]);
+    expect(tuloy.store.injections()).toEqual([
+      { id: 1, task: 'script', kind: 'peer_silent' },
+      { id: 2, task: 'reviewer', kind: 'peer_refuses' },
+    ]);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
 });

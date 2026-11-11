@@ -153,16 +153,16 @@ export function createConductor({
       const why = peer ? `re-routed to ${peerAgentName(peer, task.role)}` : model === 'backup' ? 're-routed to the backup model' : history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done';
       if (!stopped) store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'started' });
       // Demo mode: a pending injection for this agent is used now, one time. Injections act on the primary model;
-      // only an outage of all own models goes with the task to the backup model.
-      const injected = stopped || model === 'peer' ? undefined : model === 'primary' ? store.takeInjection(task.role) : allDown;
+      // only an outage of all own models goes with the task to the backup model. The kinds for a peer act on the peer step.
+      const injected = stopped ? undefined : model === 'backup' ? allDown : store.takeInjection(task.role, model === 'peer');
       if (injected === 'all_models_outage') allDown = injected;
-      if (injected && model === 'primary') store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
+      if (injected && model !== 'backup') store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
       // The time limit starts when the agent has its slot, not while it waits in line.
       const heartbeat = (cause: string) => () => void store.append({ runId, taskId, action: 'heartbeat', cause, result: 'alive' });
       const result = stopped
         ? { ok: false as const, failure: stopped }
         : peer
-          ? await runPeerAgent(task.role, input, peer, peerClient, { clock, limits, onHeartbeat: heartbeat(`${peer.name}'s Tuloy answered: the task is in work`) })
+          ? await runPeerAgent(task.role, input, peer, peerClient, { clock, limits, injected, onHeartbeat: heartbeat(`${peer.name}'s Tuloy answered: the task is in work`) })
           : await withModelSlot(() => runAgent(task.role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, outside, onHeartbeat: heartbeat('the agent waits for the model') }));
       stopped = null;
       if (result.ok) {

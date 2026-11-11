@@ -155,9 +155,12 @@ export function openStore(file: string, clock: { now(): number }) {
     injections(): Injection[] {
       return db.prepare('SELECT * FROM injections ORDER BY id').all().map((r: Row) => ({ id: r.id, task: r.task, kind: r.kind }));
     },
-    /** Removes and returns the oldest pending injection for this role. Each injection is used one time. */
-    takeInjection(task: Role): string | undefined {
-      const row = db.prepare('DELETE FROM injections WHERE id = (SELECT MIN(id) FROM injections WHERE task = ?) RETURNING kind').get(task);
+    /**
+     * Removes and returns the oldest pending injection for this role. Each injection is used one time.
+     * The kinds `peer_…` are for the attempt at a peer (`forPeerStep`); all other kinds are for an attempt on an own model.
+     */
+    takeInjection(task: Role, forPeerStep = false): string | undefined {
+      const row = db.prepare(`DELETE FROM injections WHERE id = (SELECT MIN(id) FROM injections WHERE task = ? AND kind ${forPeerStep ? '' : 'NOT'} LIKE 'peer%') RETURNING kind`).get(task);
       return row?.kind as string | undefined;
     },
     /** Calls `listener` for each new event. Returns the function that stops it. */
