@@ -8,9 +8,10 @@ import { createServer } from './server.ts';
 import { readSettings } from './settings.ts';
 import { openStore } from './store.ts';
 
-const settings = readSettings(process.env);
+let settings;
 let models;
 try {
+  settings = readSettings(process.env);
   models = openRouterModels(settings);
 } catch (error) {
   console.error((error as Error).message);

@@ -19,3 +19,27 @@ test('a real run needs the key and the two model IDs', () => {
   expect(() => openRouterModels(readSettings({ TULOY_PRIMARY_MODEL: 'a/b', TULOY_BACKUP_MODEL: 'c/d' }))).toThrow('OPENROUTER_API_KEY');
   expect(() => openRouterModels(readSettings({ OPENROUTER_API_KEY: 'test-key' }))).toThrow('TULOY_PRIMARY_MODEL, TULOY_BACKUP_MODEL');
 });
+
+// ---- Review fix 4: every numeric setting is checked at start-up ----
+
+test.each([
+  ['TULOY_RETRIES', 'abc'],
+  ['TULOY_RETRIES', '-1'],
+  ['TULOY_RETRIES', '1.5'],
+  ['TULOY_RETRIES', '1000'],
+  ['TULOY_RETRY_WAIT_MS', 'soon'],
+  ['TULOY_TASK_TIME_LIMIT_MS', '0'],
+  ['TULOY_HEARTBEAT_MS', '0'],
+  ['TULOY_HEARTBEAT_MISSED_MS', 'NaN'],
+  ['TULOY_MAX_MODEL_CALLS', '0'],
+  ['TULOY_MAX_OUTPUT_TOKENS', 'Infinity'],
+  ['TULOY_PEER_TASKS_PER_HOUR', '-5'],
+  ['TULOY_PORT', '70000'],
+  ['TULOY_PORT', '4000x'],
+])('a bad value stops the start with a message that names the setting: %s=%s', (name, value) => {
+  expect(() => readSettings({ [name]: value })).toThrow(new RegExp(`^${name} must be a whole number from \\d+ to \\d+, and it is "${value}"\\.$`));
+});
+
+test('the limits of each numeric setting are permitted values', () => {
+  expect(readSettings({ TULOY_RETRIES: '0', TULOY_PEER_TASKS_PER_HOUR: '0', TULOY_PORT: '65535', TULOY_RETRY_WAIT_MS: '0' })).toMatchObject({ port: 65535, peerTasksPerHour: 0, limits: { retries: 0, retryWaitMs: 0 } });
+});
