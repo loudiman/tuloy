@@ -265,7 +265,8 @@ function drawResult() {
   result.className = 'result';
   if (!detail) return result.replaceChildren();
   const { run, tasks, events } = detail;
-  const output = (role: string) => tasks.find((t) => t.role === role)?.output as Record<string, unknown> | null | undefined;
+  // When a peer did the full goal, the one task with role `goal` holds the scripts and the schedule.
+  const output = (role: string) => (tasks.find((t) => t.role === role) ?? tasks.find((t) => t.role === 'goal'))?.output as Record<string, unknown> | null | undefined;
   const scripts = (output('script')?.scripts ?? []) as Script[];
   const reviews = (output('reviewer')?.reviews ?? []) as Review[];
   const posts = ((output('scheduler')?.posts ?? []) as Post[]).toSorted((a, b) => Date.parse(a.time ?? '') - Date.parse(b.time ?? ''));
@@ -376,7 +377,8 @@ const kinds: [kind: string, label: string][] = [
   ['peer_silent', 'Silent peer'],
   ['peer_refuses', 'Peer refuses'],
 ];
-const roles = ['trend_scout', 'script', 'reviewer', 'scheduler'];
+// `goal` is the full goal at a peer (step 4): only the two peer injections act on it.
+const roles = ['trend_scout', 'script', 'reviewer', 'scheduler', 'goal'];
 let pendingWorks = true;
 
 function drawDemo() {

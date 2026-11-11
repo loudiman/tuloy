@@ -7,7 +7,8 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/main.ts",
-    "start:sample": "TULOY_OWNER='Sam (sample owner)' TULOY_PORT=4001 TULOY_DATA_DIR=./data/sample node --env-file-if-exists=.env src/main.ts",
+    "start:demo": "TULOY_DEMO=1 TULOY_PEER_ALLOW_LOCAL=1 node --env-file-if-exists=.env src/main.ts",
+    "start:sample": "TULOY_DEMO=1 TULOY_PEER_ALLOW_LOCAL=1 TULOY_OWNER='Sam (sample owner)' TULOY_PORT=4001 TULOY_DATA_DIR=./data/sample node --env-file-if-exists=.env src/main.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

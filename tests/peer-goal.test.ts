@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, expect, test } from 'vitest';
 import { createPeerClient, type A2aAnswer } from '../src/peer-client.ts';
 import { SAMPLE_GOAL } from '../src/planner.ts';
 import { createServer } from '../src/server.ts';
+import { readSettings } from '../src/settings.ts';
 import { nextAction, type Failure } from '../src/recovery-policy.ts';
 import type { TuloyEvent } from '../src/store.ts';
 import { taskViews } from '../src/task-view.ts';
@@ -208,4 +212,98 @@ test('a peer run that ends as escalated returns failed, and a goal that came fro
   expect(lines(lou, run!.id, (e) => e.action === 'goal_to_peer' || (e.action === 'reroute' && e.result !== 'backup model'))).toEqual([]);
   expect(ana.store.runs()).toEqual([]);
   expect(sam.store.runs()).toEqual([]);
+});
+
+test("two real Tuloys: own models down and the peer's agent refuses → the peer finishes the goal", async () => {
+  // Sam's two models are down for the script task. Lou's script agent refuses (the demo injection); then Lou takes the full goal.
+  const sam = await startTuloy('Sam', { script: { script: [down()] } });
+  const lou = await startTuloy('Lou');
+  await invite(sam, lou);
+  sam.store.addInjection('script', 'peer_refuses');
+
+  const { runId, ended } = sam.conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(sam.store.run(runId)?.status).toBe('done');
+  expect(lines(sam, runId, (e) => e.taskId === 'scripts')).toEqual([
+    'assign script',
+    'handoff checked content stored',
+    'dispatch started',
+    'model_call model_unavailable',
+    'reroute backup model',
+    'dispatch started',
+    'model_call model_unavailable',
+    "reroute Lou's script agent",
+    'dispatch started',
+    'injection peer_refuses',
+    'peer_call peer_failed',
+    'goal_to_peer Lou',
+  ]);
+  // Sam's task graph is now one task, and its output is the scripts and the schedule that Lou's run made.
+  expect(goalTask(sam, runId)).toMatchObject({ id: 'goal', status: 'done', shownStatus: 'done', agent: "Lou's conductor", output: goalOutput, stuckReason: null });
+  // Lou did one full run for Sam, with its own four agents. Sam's own agents made nothing after the trends.
+  expect(lou.store.runs()).toMatchObject([{ goal: SAMPLE_GOAL, forPeer: 'Sam', status: 'done' }]);
+  expect(lou.model.calls.map((c) => c.role)).toEqual(['trend_scout', 'script', 'reviewer', 'scheduler']);
+  expect(sam.model.calls.map((c) => c.role)).toEqual(['trend_scout', 'script']);
+  const { sendKey } = sam.store.peers()[0]!;
+  expect(JSON.stringify([sam.store.events(runId), lou.store.events(lou.store.runs()[0]!.id)])).not.toContain(sendKey);
+});
+
+test('two real Tuloys: the peer fails the task and then fails the goal → the run ends as escalated, and the goal was given one time', async () => {
+  const sam = await startTuloy('Sam', { script: { script: [down()] } });
+  const lou = await startTuloy('Lou', { script: { script: [down(), down()] } });
+  await invite(sam, lou);
+
+  const { runId, ended } = sam.conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(sam.store.run(runId)?.status).toBe('escalated');
+  expect(goalTask(sam, runId).stuckReason).toBe(
+    "Full goal task failed: Lou's conductor failed: Lou's Tuloy did not finish the goal: the run ended as escalated. Every path failed: the own script agent, the backup model, Lou's script agent, the full goal to Lou. The run ended as escalated.",
+  );
+  // Lou has two runs for Sam: the script task, then the full goal. No third.
+  expect(lou.store.runs().map((r) => [r.forPeer, r.status, lou.store.tasks(r.id).length])).toEqual([['Sam', 'escalated', 4], ['Sam', 'escalated', 1]]);
+});
+
+test('after a restart, a goal that was with a peer is not given again: the run ends as escalated', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
+  const first = ownModelsDown({ file, peer: [refused, working] });
+  // The program stops when the peer has the goal.
+  first.store.subscribe((e) => e.taskId === 'goal' && e.action === 'dispatch' && first.store.close());
+  const { runId, ended } = first.conductor.startRun(SAMPLE_GOAL);
+  await ended.catch(() => {}); // the stopped conductor dies on the closed store
+
+  const tuloy = testTuloy({ file, peer: [result(goalOutput)] });
+  await tuloy.conductor.continueRuns()[0]!.ended;
+
+  expect(tuloy.store.run(runId)?.status).toBe('escalated');
+  expect(lines(tuloy, runId, (e) => e.taskId === 'goal')).toEqual(["assign Maria's conductor", 'dispatch started', 'watch missed_heartbeat', 'escalate escalated']);
+  expect(goalTask(tuloy, runId).stuckReason).toBe(
+    "Full goal task stalled: Tuloy restarted while the task was in work. Every path failed: the own script agent, the backup model, Maria's script agent, the full goal to Maria. The run ended as escalated.",
+  );
+  expect(tuloy.peer.calls).toEqual([]);
+});
+
+test("a peer that stays silent on the goal is found at four task time limits: the peer's run has four tasks", async () => {
+  const tuloy = ownModelsDown({ peer: [refused, working] });
+
+  const { runId, ended } = tuloy.conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  const events = tuloy.store.events(runId).filter((e) => e.taskId === 'goal');
+  expect(events.slice(-2).map((e) => [e.action, e.result, e.cause, e.time - events[0]!.time])).toEqual([
+    ['watch', 'timeout', "Maria's conductor gave no result in 240s", 240_000],
+    ['escalate', 'escalated', "every path failed: the own script agent, the backup model, Maria's script agent, the full goal to Maria", 240_000],
+  ]);
+  expect(tuloy.peer.calls.at(-1)!.move).toBe('cancel');
+});
+
+test('the demo command and the sample command turn on demo mode and the same-machine setting', () => {
+  const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> };
+  // The settings that each command puts before `node`, as the program reads them.
+  const settings = (command: string) => readSettings(Object.fromEntries([...command.split(' node ')[0]!.matchAll(/(\w+)=('[^']*'|\S+)/g)].map((m) => [m[1]!, m[2]!.replaceAll("'", '')])));
+
+  expect(settings(scripts['start:demo']!)).toMatchObject({ demo: true, peerAllowLocal: true, owner: 'Owner', port: 4000 });
+  expect(settings(scripts['start:sample']!)).toMatchObject({ demo: true, peerAllowLocal: true, owner: 'Sam (sample owner)', port: 4001, dataDir: './data/sample' });
+  expect(settings(scripts.start!)).toMatchObject({ demo: false, peerAllowLocal: false });
 });
