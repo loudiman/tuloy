@@ -12,7 +12,7 @@ const skillNames = Object.keys(skills) as [Skill, ...Skill[]];
 
 const skillWords: Record<Skill, string> = {
   trend_scout: 'Finds the short-video trends that fit a goal.',
-  script: 'Writes one short-video script per trend.',
+  script: 'Writes short-video scripts that use the trends of a goal.',
   reviewer: 'Passes or rejects each script against written criteria.',
   scheduler: 'Makes a posting schedule in Manila time for the scripts that passed.',
   goal: 'Takes a full goal: this Tuloy does a full run and returns the scripts and the posting schedule.',

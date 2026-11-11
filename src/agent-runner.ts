@@ -10,7 +10,7 @@ import type { Limits } from './settings.ts';
 const prompts: Record<Role, string> = {
   trend_scout: 'You are the trend scout of a small traffic studio in the Philippines. Read the goal. Return the short-video trends that fit it, each with a topic and why it fits.',
   script:
-    'You are the script agent. Read the goal and the trends. Write one short-video script per trend, each with an id, a hook, a body, a cta and a language. The language is english, filipino or taglish (spoken Filipino English). If the input has reviewer_hints, the reviewer rejected those scripts: write the scripts again and fix each issue with the help of the hints.',
+    'You are the script agent. Read the goal and the trends. Write short-video scripts that use the trends, each with an id, a hook, a body, a cta and a language. If the goal gives no number of scripts, write 2 scripts. Keep each body short enough to shoot in the duration that the goal gives, or in 60 seconds if it gives none. The language is english, filipino or taglish (spoken Filipino English). If the input has reviewer_hints, the reviewer rejected those scripts: write the scripts again and fix each issue with the help of the hints.',
   reviewer:
     'You are the reviewer. Read each script. Pass a script only if the hook gets attention in the first line, the body fits a video of less than 60 seconds, the cta is one clear action, and the language matches its label. For each script return the script_id, a verdict (pass or reject), a score from 0 (worst) to 10 (best), the issues, and for a rejected script the hints that say how to fix it. A script that passes has empty issues and hints.',
   scheduler:

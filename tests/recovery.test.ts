@@ -188,7 +188,7 @@ test('every model call has the limit on output tokens of the settings', async ()
   const small = testTuloy({ limits: { maxOutputTokens: 500 } });
   await small.conductor.startRun(SAMPLE_GOAL).ended;
 
-  expect(usual.model.calls.map((c) => c.maxOutputTokens)).toEqual([2000, 2000, 2000, 2000]);
+  expect(usual.model.calls.map((c) => c.maxOutputTokens)).toEqual([4000, 4000, 4000, 4000]);
   expect(small.model.calls.map((c) => c.maxOutputTokens)).toEqual([500, 500, 500, 500]);
 });
 

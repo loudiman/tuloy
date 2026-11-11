@@ -189,3 +189,13 @@ test('the cause of an invalid output is a plain sentence, and the raw detail sta
   ]);
   expect((invalid[0].data as { detail: string }).detail).toContain('expected array');
 });
+
+test('the script agent is told how many scripts to write when the goal gives no number, and to keep each body short enough to shoot', async () => {
+  const { conductor, model } = testTuloy();
+
+  await conductor.startRun(SAMPLE_GOAL).ended;
+
+  const system = model.calls.find((c) => c.role === 'script')!.system;
+  expect(system).toContain('If the goal gives no number of scripts, write 2 scripts.');
+  expect(system).toContain('Keep each body short enough to shoot in the duration that the goal gives, or in 60 seconds if it gives none.');
+});

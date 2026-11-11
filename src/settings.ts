@@ -38,7 +38,7 @@ export function readSettings(env: Record<string, string | undefined>) {
       /** At most this number of model calls run at the same time, over all runs. */
       maxModelCalls: whole('TULOY_MAX_MODEL_CALLS', 2, 1, 20),
       /** The limit on output tokens of each model call. */
-      maxOutputTokens: whole('TULOY_MAX_OUTPUT_TOKENS', 2000, 1, 100_000),
+      maxOutputTokens: whole('TULOY_MAX_OUTPUT_TOKENS', 4000, 1, 100_000),
     },
   };
 }
