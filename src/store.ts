@@ -162,17 +162,17 @@ export function openStore(file: string, clock: Clock) {
     peerRunsInLastHour(name: string): number {
       return Number(db.prepare('SELECT COUNT(*) AS n FROM runs WHERE for_peer = ? AND started_at > ?').get(name, clock.now() - 60 * 60 * 1000)!.n);
     },
-    /** Saves an open invite. Only the hash of its token is stored. */
+    /** Saves an open invite. Only the hash of its token is stored. It stops working after 24 hours. */
     createInvite(tokenHash: string) {
-      db.prepare('INSERT INTO invites (token_hash, expires_at) VALUES (?, ?)').run(tokenHash, clock.now());
+      db.prepare('INSERT INTO invites (token_hash, expires_at) VALUES (?, ?)').run(tokenHash, clock.now() + 24 * 60 * 60 * 1000);
     },
-    /** True when there is such an invite and it is not used. */
+    /** True when there is such an invite, it is not used and it is not older than 24 hours. */
     inviteIsOpen(tokenHash: string): boolean {
-      return !!db.prepare('SELECT 1 FROM invites WHERE token_hash = ? AND used_at IS NULL').get(tokenHash);
+      return !!db.prepare('SELECT 1 FROM invites WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?').get(tokenHash, clock.now());
     },
     /** Uses up an open invite. False when it was not open: an invite works one time. */
     useInvite(tokenHash: string): boolean {
-      return db.prepare('UPDATE invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL').run(clock.now(), tokenHash).changes === 1;
+      return db.prepare('UPDATE invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?').run(clock.now(), tokenHash, clock.now()).changes === 1;
     },
     close() {
       db.close();

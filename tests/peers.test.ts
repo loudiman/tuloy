@@ -249,3 +249,21 @@ test('an invite works one time: a second Tuloy that uses the same link is refuse
   expect(sam.store.peers().map((p) => p.name)).toEqual(['Lou']);
   expect(ana.store.peers()).toEqual([]);
 });
+
+test('an invite stops working after 24 hours; one minute before that it still works', async () => {
+  const sam = await startTuloy('Sam');
+  const lou = await startTuloy('Lou');
+  const HOUR = 60 * 60 * 1000;
+  const late = await makeInvite(sam.url);
+  const inTime = await makeInvite(sam.url);
+
+  sam.clock.advance(24 * HOUR - 60_000);
+  const accepted = await acceptInvite(lou.url, inTime);
+  sam.clock.advance(60_000);
+  const refused = await acceptInvite((await startTuloy('Ana')).url, late);
+
+  expect(accepted.status).toBe(201);
+  expect(refused.status).toBe(410);
+  expect(((await refused.json()) as any).error).toContain('24 hours');
+  expect(sam.store.peers().map((p) => p.name)).toEqual(['Lou']);
+});
