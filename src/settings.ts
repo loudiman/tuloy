@@ -7,6 +7,8 @@ export function readSettings(env: Record<string, string | undefined>) {
     primaryModel: env.TULOY_PRIMARY_MODEL || undefined,
     backupModel: env.TULOY_BACKUP_MODEL || undefined,
     apiKey: env.OPENROUTER_API_KEY || undefined,
+    /** Demo mode. Injection exists only in demo mode. */
+    demo: env.TULOY_DEMO === '1',
     limits: {
       /** Retries after the first attempt. */
       retries: Number(env.TULOY_RETRIES || 2),

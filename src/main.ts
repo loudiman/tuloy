@@ -19,6 +19,6 @@ mkdirSync(settings.dataDir, { recursive: true });
 const store = openStore(join(settings.dataDir, 'tuloy.sqlite'), systemClock);
 const conductor = createConductor({ store, models, clock: systemClock, limits: settings.limits });
 // ponytail: loopback only, there is no login. Ticket 8 opens the A2A surface with keys.
-createServer({ store, conductor, owner: settings.owner }).listen(settings.port, '127.0.0.1', () => {
+createServer({ store, conductor, owner: settings.owner, demo: settings.demo }).listen(settings.port, '127.0.0.1', () => {
   console.log(`Tuloy of ${settings.owner}: http://localhost:${settings.port}`);
 });
