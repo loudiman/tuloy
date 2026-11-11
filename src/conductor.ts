@@ -1,17 +1,36 @@
 import type { LanguageModel } from 'ai';
 import type { z } from 'zod';
 import { runAgent } from './agent-runner.ts';
+import type { Clock } from './clock.ts';
 import { planTaskGraph } from './planner.ts';
+import { nextAction, type Failure } from './recovery-policy.ts';
 import { roles, type Role } from './schemas.ts';
-import type { Store } from './store.ts';
+import type { Limits } from './settings.ts';
+import type { Store, TaskStatus } from './store.ts';
 
 export type Conductor = ReturnType<typeof createConductor>;
 
 /**
  * The conductor owns a run from the goal to its end. Read what it did from the store: the task rows and the event log.
- * ponytail: no recovery, a failure ends the run as escalated; tasks run one at a time. The backup model is not used yet.
+ * Recovery: a failed or stalled task goes to the recovery policy; the conductor does the action that the policy returns.
+ * ponytail: in one run, tasks start one at a time (the template graph never has two ready tasks). Runs go side by side. The backup model is not used yet.
  */
-export function createConductor({ store, models }: { store: Store; models: { primary: LanguageModel; backup: LanguageModel } }) {
+export function createConductor({ store, models, clock, limits }: { store: Store; models: { primary: LanguageModel; backup: LanguageModel }; clock: Clock; limits: Limits }) {
+  // At most `limits.maxModelCalls` agents run at the same time, over all runs of this Tuloy. The others wait in line.
+  let freeSlots = limits.maxModelCalls;
+  const line: (() => void)[] = [];
+  async function withModelSlot<T>(work: () => Promise<T>): Promise<T> {
+    if (freeSlots > 0) freeSlots--;
+    else await new Promise<void>((resolve) => line.push(resolve));
+    try {
+      return await work();
+    } finally {
+      const next = line.shift();
+      if (next) next(); // the slot goes directly to the next in line
+      else freeSlots++;
+    }
+  }
+
   /** Stores the task graph and starts the run. `ended` resolves when the run is done or escalated; it never rejects. */
   function startRun(goal: string): { runId: number; ended: Promise<void> } {
     const tasks = planTaskGraph(goal);
@@ -75,21 +94,50 @@ export function createConductor({ store, models }: { store: Store; models: { pri
     if (deps.length) {
       store.append({ runId, taskId, action: 'handoff', cause: `${deps.map((d) => d.id).join(', ')} done`, result: 'checked content stored', data: { from: deps.map((d) => d.id), content: input } });
     }
-    store.append({ runId, taskId, action: 'dispatch', cause: 'the tasks it depends on are done', result: 'started' });
+    // One turn of this loop is one attempt. The earlier failures of the task are the history for the recovery policy.
+    const history: Failure[] = [];
+    let output: unknown;
+    for (;;) {
+      store.append({ runId, taskId, action: 'dispatch', cause: history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done', result: 'started' });
+      // Demo mode: a pending injection for this agent is used now, one time.
+      const injected = store.takeInjection(task.role);
+      if (injected) store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
+      // The time limit starts when the agent has its slot, not while it waits in line.
+      const result = await withModelSlot(() =>
+        runAgent(task.role, input, models.primary, {
+          clock,
+          limits,
+          injected,
+          onHeartbeat: () => store.append({ runId, taskId, action: 'heartbeat', cause: 'the agent waits for the model', result: 'alive' }),
+        }),
+      );
+      if (result.ok) {
+        output = result.output;
+        break;
+      }
+      const { failure } = result;
+      store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind });
+      store.updateTask(runId, taskId, { status: failedStatus[failure.kind] });
 
-    const result = await runAgent(task.role, input, models.primary);
-    if (!result.ok) {
-      store.append({ runId, taskId, action: result.failure === 'invalid_output' ? 'validate' : 'model_call', cause: result.detail, result: result.failure });
-      store.updateTask(runId, taskId, { status: 'escalated' });
-      endRun(runId, 'escalated', `${taskId} failed: ${result.failure}`);
-      return 'escalated';
+      const action = nextAction(failure, history, limits);
+      if (action.do === 'escalate') {
+        store.append({ runId, taskId, action: 'escalate', cause: action.cause, result: 'escalated' });
+        store.updateTask(runId, taskId, { status: 'escalated' });
+        endRun(runId, 'escalated', `${taskId} failed: ${failure.kind}`);
+        return 'escalated';
+      }
+      store.append({ runId, taskId, action: 'retry', cause: failure.kind, result: 'waiting', data: action });
+      await clock.sleep(action.waitMs);
+      if (store.run(runId)?.status !== 'running') return 'escalated';
+      history.push(failure);
+      store.updateTask(runId, taskId, { status: 'recovering' });
     }
     store.append({ runId, taskId, action: 'validate', cause: `the output matches the ${task.role} schema`, result: 'valid' });
-    store.updateTask(runId, taskId, { status: 'done', output: result.output });
+    store.updateTask(runId, taskId, { status: 'done', output });
 
     // A rejection is a failure of the script task. The scheduler starts only after a pass.
     if (task.role === 'reviewer') {
-      const { reviews } = result.output as z.infer<typeof roles.reviewer.output>;
+      const { reviews } = output as z.infer<typeof roles.reviewer.output>;
       const rejected = reviews.filter((r) => r.verdict === 'reject');
       const scriptTaskId = deps.find((d) => d.role === 'script')?.id ?? taskId;
       if (rejected.length) {
@@ -107,3 +155,21 @@ export function createConductor({ store, models }: { store: Store; models: { pri
 }
 
 const isWaiting = (status: string) => status === 'queued' || status === 'waiting_on_dependency';
+
+/** The stored status of a task after each failure. */
+const failedStatus: Record<Failure['kind'], TaskStatus> = {
+  timeout: 'stalled_timeout',
+  missed_heartbeat: 'stalled_heartbeat',
+  invalid_output: 'failed_validation',
+  model_unavailable: 'model_unavailable',
+  rate_limited: 'model_unavailable',
+};
+
+/** The event action that finds each failure. */
+const failureAction: Record<Failure['kind'], string> = {
+  timeout: 'watch',
+  missed_heartbeat: 'watch',
+  invalid_output: 'validate',
+  model_unavailable: 'model_call',
+  rate_limited: 'model_call',
+};

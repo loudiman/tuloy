@@ -86,8 +86,9 @@ test('an early start is rejected and is an event', async () => {
   expect(store.events(runId).filter((e) => e.taskId === 'schedule' && e.action === 'dispatch').map((e) => e.result)).toEqual(['rejected', 'started']);
 });
 
-test('an output that does not match its schema never becomes the next agent input, and the run ends as escalated', async () => {
-  const { conductor, store } = testTuloy({ script: { script: [{ scripts: 'junk' }] } });
+test('an output that never matches its schema never becomes the next agent input, and the run ends as escalated', async () => {
+  const junk = { scripts: 'junk' };
+  const { conductor, store } = testTuloy({ script: { script: [junk, junk, junk] } });
 
   const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
   await ended;
@@ -99,7 +100,7 @@ test('an output that does not match its schema never becomes the next agent inpu
     ['review', 'waiting_on_dependency', null],
     ['schedule', 'waiting_on_dependency', null],
   ]);
-  expect(trail(store, runId).slice(-3)).toEqual(['scripts dispatch started', 'scripts validate invalid_output', 'run end escalated']);
+  expect(trail(store, runId).slice(-4)).toEqual(['scripts dispatch started', 'scripts validate invalid_output', 'scripts escalate escalated', 'run end escalated']);
   expect(store.events(runId).some((e) => e.taskId === 'review')).toBe(false);
 });
 
@@ -110,8 +111,9 @@ test('a model that fails ends the run as escalated', async () => {
   await ended;
 
   expect(store.run(runId)?.status).toBe('escalated');
-  expect(store.events(runId).slice(-2)).toMatchObject([
+  expect(store.events(runId).slice(-3)).toMatchObject([
     { taskId: 'trends', action: 'model_call', result: 'model_unavailable', cause: '[model down]' },
+    { taskId: 'trends', action: 'escalate', result: 'escalated', cause: 'a model outage is not retried' },
     { taskId: null, action: 'end', result: 'escalated' },
   ]);
 });
@@ -145,8 +147,10 @@ test.each([
   ['a schedule in a different timezone', { scheduler: [{ timezone: 'UTC', posts: [post] }] }, 'escalated'],
   ['a post with no reason', { scheduler: [{ timezone: 'Asia/Manila', posts: [{ ...post, reason: undefined }] }] }, 'escalated'],
   ['a post with a time that has no offset', { scheduler: [{ timezone: 'Asia/Manila', posts: [{ ...post, time: '2026-11-13 19:00' }] }] }, 'escalated'],
-] as const)('%s ends the run as %3$s', async (_name, script, status) => {
-  const { conductor, store } = testTuloy({ script: script as never });
+] as const)('%s, each time, ends the run as %3$s', async (_name, script, status) => {
+  // The same answer for the first attempt and for the two retries.
+  const eachTime = Object.fromEntries(Object.entries(script).map(([role, steps]) => [role, [...steps, ...steps, ...steps]]));
+  const { conductor, store } = testTuloy({ script: eachTime });
 
   const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
   await ended;
