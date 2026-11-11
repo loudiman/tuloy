@@ -424,11 +424,25 @@ function setUpDemo() {
 
 // ---- start ----
 
-$('start').addEventListener('click', async () => {
-  const response = await fetch('/api/runs', { method: 'POST' }).catch(() => undefined);
-  if (!response?.ok) return void refresh();
+/** Starts a run and opens it. No goal = the labelled sample goal. A refused goal shows the server's reason. */
+async function start(goal?: string): Promise<boolean> {
+  const note = $('start-note');
+  note.textContent = '';
+  const response = await fetch('/api/runs', { method: 'POST', body: goal === undefined ? undefined : JSON.stringify({ goal }) }).catch(() => undefined);
+  if (!response?.ok) {
+    const answer = (await response?.json().catch(() => undefined)) as { error?: string } | undefined;
+    note.textContent = response ? `The run did not start: ${answer?.error ?? `answer ${response.status}`}.` : 'The run did not start: Tuloy does not answer.';
+    return false;
+  }
   const { runId } = (await response.json()) as { runId: number };
   location.hash = link(runId);
+  return true;
+}
+$('start').addEventListener('click', () => void start());
+$('goal-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const input = $('goal-input') as HTMLInputElement;
+  if (input.value.trim() && (await start(input.value.trim()))) input.value = '';
 });
 addEventListener('hashchange', () => void refresh());
 // The time passed of a running run moves each second. All other numbers change only with an event.

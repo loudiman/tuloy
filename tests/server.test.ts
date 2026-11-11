@@ -119,3 +119,20 @@ test('the list of runs says if this Tuloy is in demo mode', async () => {
     }
   }
 });
+
+test('the dashboard has a field for a goal that the owner types, and a link to the peers screen; the peers screen has the look of the dashboard', async () => {
+  const { server, url } = await startTestServer();
+  try {
+    const html = await (await fetch(url)).text();
+    expect(html).toContain('<form id="goal-form"');
+    expect(html).toContain('Start this goal');
+    expect(html).toContain('href="/peers"');
+
+    const peers = await (await fetch(`${url}/peers`)).text();
+    expect(peers).toContain('href="/page/style.css"');
+    expect(peers).toContain('href="/"');
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});

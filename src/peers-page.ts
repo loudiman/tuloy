@@ -5,52 +5,63 @@ export const peersPage = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tuloy: peers</title>
-<style>
-  body { font: 16px/1.5 system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: left; padding: .3rem .6rem; border-bottom: 1px solid #ccc; vertical-align: top; }
-  input { font: inherit; padding: .2rem .4rem; }
-  button { font: inherit; }
-  label { display: block; margin: .4rem 0; }
-  #link, #paste { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: .85rem; }
-  .note { font-size: .85rem; color: #555; }
-  .key { font-family: ui-monospace, monospace; font-size: .85rem; white-space: nowrap; }
-  [role=status] { min-height: 1.5rem; font-weight: 600; }
-</style>
+<link rel="preload" href="/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/martian-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/page/style.css">
 </head>
 <body>
-<p><a href="/">&larr; Runs</a></p>
-<h1>Peers <small id="owner"></small></h1>
-<p>The allowed list: the peers and outside agents that can give work to this Tuloy and take work from it.</p>
+<header class="bar">
+  <p class="mark">Tuloy <span id="owner" class="owner"></span></p>
+  <nav class="nav" aria-label="Screens"><a href="/">Runs</a><a href="/peers" aria-current="page">Peers</a></nav>
+</header>
 
-<table>
-  <thead><tr><th>Name</th><th>Address</th><th>Lends</th><th>Tasks in the last hour</th><th>Keys</th><th></th></tr></thead>
-  <tbody id="peers"></tbody>
-</table>
-<p id="loading">Reading the allowed list&hellip;</p>
-<p id="empty" hidden>Nobody is on the allowed list. Make an invite and send it to another owner, or paste an invite that you got.</p>
-<p id="message" role="status"></p>
+<main>
+  <section class="slate slate-plain">
+    <p class="label">Allowed list</p>
+    <h1>Peers</h1>
+    <p class="slate-help">The peers and outside agents that can give work to this Tuloy and take work from it. Nothing outside this list gets work or gives work.</p>
+  </section>
 
-<h2>Invite another owner</h2>
-<p><button id="make">Make an invite link</button></p>
-<div id="made" hidden>
-  <input id="link" readonly aria-label="Invite link">
-  <p><button id="copy">Copy the link</button> <span class="note">It works one time and stops working after 24 hours. Send it only to the owner that you invite.</span></p>
-</div>
+  <section class="sheet table-wrap" aria-label="The allowed list">
+    <table class="peer-table">
+      <thead><tr><th>Name</th><th>Address</th><th>Lends</th><th>Tasks in the last hour</th><th>Keys</th><th></th></tr></thead>
+      <tbody id="peers"></tbody>
+    </table>
+    <p id="loading" class="peers-note">Reading the allowed list&hellip;</p>
+    <p id="empty" class="peers-note" hidden>Nobody is on the allowed list. Make an invite and send it to another owner, or paste an invite that you got.</p>
+  </section>
+  <p id="message" role="status"></p>
 
-<h2>Accept an invite</h2>
-<form id="accept">
-  <label>Invite link from another owner <input id="paste" required autocomplete="off"></label>
-  <button>Accept the invite</button>
-</form>
+  <div class="peer-forms">
+    <section class="sheet">
+      <h2>Invite another owner</h2>
+      <p><button id="make" type="button">Make an invite link</button></p>
+      <div id="made" hidden>
+        <input id="link" readonly aria-label="Invite link">
+        <p><span class="note">It works one time and stops working after 24 hours. Send it only to the owner that you invite.</span></p>
+        <p><button id="copy" type="button">Copy the link</button></p>
+      </div>
+    </section>
 
-<h2>Add an A2A agent</h2>
-<form id="add">
-  <label>Name <input id="name" required maxlength="100" autocomplete="off"></label>
-  <label>Address <input id="address" type="url" required placeholder="https://agent.example" autocomplete="off"></label>
-  <label>Key to send with <input id="key" type="password" required autocomplete="off"></label>
-  <button>Add to the allowed list</button>
-</form>
+    <section class="sheet">
+      <h2>Accept an invite</h2>
+      <form id="accept">
+        <label>Invite link from another owner <input id="paste" required autocomplete="off"></label>
+        <button>Accept the invite</button>
+      </form>
+    </section>
+
+    <section class="sheet">
+      <h2>Add an A2A agent</h2>
+      <form id="add">
+        <label>Name <input id="name" required maxlength="100" autocomplete="off"></label>
+        <label>Address <input id="address" type="url" required placeholder="https://agent.example" autocomplete="off"></label>
+        <label>Key to send with <input id="key" type="password" required autocomplete="off"></label>
+        <button>Add to the allowed list</button>
+      </form>
+    </section>
+  </div>
+</main>
 
 <script>
 const $ = (id) => document.getElementById(id);

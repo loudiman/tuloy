@@ -68,7 +68,8 @@ h2, h3 { font-size: 0.95rem; color: var(--soft); margin-bottom: 0.7rem; }
   white-space: nowrap;
 }
 .tag-demo { background: var(--warn-fill); color: var(--ink); border-color: var(--ink); }
-.tag-peer { border-style: dashed; text-transform: none; letter-spacing: 0.02em; }
+.tag-peer { background: var(--ink); color: var(--sheet); border-color: var(--ink); text-transform: none; letter-spacing: 0.02em; font-size: 0.82rem; }
+.slate .tag-peer { background: var(--slate-ink); color: var(--slate); border-color: var(--slate-ink); }
 
 .glyph { display: inline-flex; flex: none; }
 .glyph svg { display: block; }
@@ -109,8 +110,31 @@ h2, h3 { font-size: 0.95rem; color: var(--soft); margin-bottom: 0.7rem; }
 }
 .mark { font-size: 1.5rem; font-weight: 800; font-stretch: 118%; letter-spacing: -0.01em; }
 .owner { font-size: 1rem; font-weight: 500; font-stretch: 100%; color: var(--soft); margin: 0 0.5rem 0 0.2rem; }
-.sample { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; font-size: 0.95rem; }
-.sample p { max-width: 44rem; text-wrap: balance; }
+.nav { display: flex; gap: 0.4rem; }
+.nav a { padding: 0.35rem 0.9rem; border: 2px solid transparent; border-radius: 4px; font-weight: 700; text-decoration: none; }
+.nav a:hover { border-color: var(--ink); }
+.nav a[aria-current] { background: var(--ink); color: var(--sheet); }
+
+/* ---- start a run: a typed goal, or the labelled sample goal ---- */
+.starter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem 2.2rem;
+  margin: 0 clamp(1rem, 2.2vw, 2.2rem) 1rem;
+  padding: 0.7rem 1rem;
+  background: var(--sheet);
+  border: 1.5px solid var(--rule);
+  border-radius: 6px;
+}
+.goal-form { display: flex; flex: 1 1 26rem; align-items: center; gap: 0.6rem; }
+.goal-form label { font-size: 0.8rem; font-weight: 700; font-stretch: 75%; text-transform: uppercase; letter-spacing: 0.07em; color: var(--soft); white-space: nowrap; }
+input, select { font: 500 1rem var(--text); color: var(--ink); background: #fff; border: 2px solid var(--ink); border-radius: 4px; padding: 0.5rem 0.7rem; }
+.goal-form input { flex: 1; min-width: 0; }
+.sample { display: flex; flex: 0 1 auto; align-items: center; gap: 0.6rem 1rem; font-size: 0.9rem; }
+.sample p { max-width: 30rem; text-wrap: balance; }
+.start-note { flex-basis: 100%; font-weight: 600; color: var(--stop); }
+.start-note:empty { display: none; }
 button {
   font: 700 1rem var(--text);
   color: var(--ink);
@@ -291,4 +315,30 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
   .event time { grid-column: 1 / -1; line-height: 1.4; }
   .post { grid-template-columns: 1fr; padding: 0.85rem 1rem; }
   .sample p { display: none; }
+  .goal-form { flex-wrap: wrap; }
+  .goal-form input { flex-basis: 100%; }
 }
+
+/* ---- the peers screen ---- */
+.slate-plain { min-height: 0; padding-bottom: 1.4rem; }
+.slate-plain h1 { max-width: none; }
+.slate-plain .slate-help { padding-bottom: 0; font-size: 1.1rem; }
+.sheet { background: var(--sheet); border: 1.5px solid var(--rule); border-radius: 5px; padding: 1rem 1.2rem 1.2rem; }
+.sheet > p { margin-bottom: 0.7rem; }
+.table-wrap { overflow-x: auto; padding: 0; }
+.peer-table { width: 100%; border-collapse: collapse; }
+.peer-table th { font-size: 0.8rem; font-stretch: 75%; text-transform: uppercase; letter-spacing: 0.07em; color: var(--soft); text-align: left; padding: 0.7rem 1.2rem 0.5rem; border-bottom: 1.5px solid var(--ink); white-space: nowrap; }
+.peer-table td { padding: 0.8rem 1.2rem; border-top: 1px solid var(--rule); vertical-align: top; }
+.peer-table td:first-child { font-size: 1.2rem; font-weight: 700; }
+.peer-table td:nth-child(2), .peer-table .key { font: 500 0.82rem/1.7 var(--mono); letter-spacing: -0.02em; }
+.peer-table button { font-size: 0.9rem; padding: 0.3rem 0.7rem; }
+.peers-note { padding: 1rem 1.2rem; color: var(--soft); }
+.peers-note[hidden] { display: none; }
+#message { padding: 0.5rem 0.8rem; background: var(--sheet); border-left: 5px solid var(--ink); font-weight: 600; }
+#message:empty { display: none; }
+.peer-forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1.4rem; align-items: start; }
+.peer-forms h2 { color: var(--ink); }
+.peer-forms label { display: grid; gap: 0.25rem; margin-bottom: 0.7rem; font-size: 0.9rem; font-weight: 700; }
+.peer-forms input { width: 100%; }
+#link, #paste { font: 500 0.8rem var(--mono); letter-spacing: -0.02em; }
+.note { display: block; margin-top: 0.6rem; font-size: 0.9rem; color: var(--soft); }
