@@ -23,7 +23,7 @@ export type RunOptions = {
   limits: Pick<Limits, 'taskTimeLimitMs' | 'heartbeatMs' | 'heartbeatMissedMs' | 'maxOutputTokens'>;
   /** Called for each heartbeat that the agent sends while it waits for the model. */
   onHeartbeat?: () => void;
-  /** Demo mode: `timeout` makes the agent silent (no model call, no heartbeat); `invalid_output` makes its output fail the schema. */
+  /** Demo mode: `timeout` makes the agent silent (no model call, no heartbeat); `invalid_output` makes its output fail the schema; `reviewer_rejection` makes the reviewer reject the first script. */
   injected?: string;
 };
 
@@ -57,6 +57,8 @@ export async function runAgent(role: Role, input: unknown, model: LanguageModel,
     ? new Promise<never>(() => {})
     : injected === 'invalid_output'
       ? Promise.resolve(check(role, { injected: 'an output that does not match the schema' }))
+      : injected === 'reviewer_rejection' && role === 'reviewer'
+        ? Promise.resolve(check(role, { reviews: (input as z.infer<typeof roles.reviewer.input>).scripts.map(injectedReview) }))
       : callModel(role, input, model, stop.signal, clock, limits.maxOutputTokens);
   try {
     return await Promise.race([answer, watch()]);
@@ -64,6 +66,12 @@ export async function runAgent(role: Role, input: unknown, model: LanguageModel,
     stop.abort(); // stops the model call, or the watch, that lost
   }
 }
+
+/** Demo mode: the reviewer rejects the first script and passes the others, with no model call. */
+const injectedReview = ({ id }: { id: string }, i: number) =>
+  i === 0
+    ? { script_id: id, verdict: 'reject', score: 2, issues: ['Demo: the presenter injected this rejection.'], hints: ['Write the script again.'] }
+    : { script_id: id, verdict: 'pass', score: 8, issues: [], hints: [] };
 
 /** Tuloy checks every output with its own schema in any case. The parse also drops fields that are not in the schema. */
 function check(role: Role, output: unknown): AgentResult {

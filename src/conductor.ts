@@ -112,6 +112,8 @@ export function createConductor({ store, models, clock, limits }: { store: Store
       // Demo mode: a pending injection for this agent is used now, one time.
       const injected = rejection ? undefined : store.takeInjection(task.role);
       if (injected) store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
+      // An injected rejection of the script acts in the review of that script: the script agent hands it to the reviewer.
+      if (injected === 'reviewer_rejection' && task.role === 'script') store.addInjection('reviewer', injected);
       // The time limit starts when the agent has its slot, not while it waits in line.
       const result: AgentResult = rejection ? { ok: false, failure: rejection } : await withModelSlot(() =>
         runAgent(task.role, input, models.primary, {

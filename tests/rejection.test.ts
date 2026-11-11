@@ -1,4 +1,7 @@
+import type { AddressInfo } from 'node:net';
 import { expect, test } from 'vitest';
+import { nextAction, type Failure } from '../src/recovery-policy.ts';
+import { createServer } from '../src/server.ts';
 import { SAMPLE_GOAL } from '../src/planner.ts';
 import { taskViews } from '../src/task-view.ts';
 import { goodOutput } from './harness/scripted-model.ts';
@@ -108,4 +111,54 @@ test('the stuck reason names the rejection and its main issue, and what the cond
     shownStatus: 'escalated',
     stuckReason: 'Script task rejected by the reviewer: The hook is weak. 2 of 2 retries used. The run ended as escalated.',
   });
+});
+
+test('the recovery policy retries a reviewer rejection like any failure of the script task, up to the limit', () => {
+  const limits = { retries: 2, retryWaitMs: 2000 };
+  const rejected: Failure = { kind: 'reviewer_rejection', detail: 's1: The hook is weak.' };
+  const junk: Failure = { kind: 'invalid_output', detail: 'x' };
+
+  expect(nextAction(rejected, [], limits)).toEqual({ do: 'retry', retry: 1, of: 2, waitMs: 2000 });
+  expect(nextAction(rejected, [junk], limits)).toEqual({ do: 'retry', retry: 2, of: 2, waitMs: 4000 });
+  expect(nextAction(rejected, [junk, rejected], limits)).toEqual({ do: 'escalate', cause: '2 of 2 retries used' });
+});
+
+test('demo mode: an injected reviewer rejection sends the script back one time, with no call to the reviewer model for it', async () => {
+  const tuloy = testTuloy();
+  const server = createServer({ store: tuloy.store, conductor: tuloy.conductor, owner: 'Lou', demo: true });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const posted = await fetch(`${url}/api/injections`, { method: 'POST', body: JSON.stringify({ task: 'script', kind: 'reviewer_rejection' }) });
+    expect(posted.status).toBe(201);
+    expect(await posted.json()).toMatchObject({ task: 'script', kind: 'reviewer_rejection' });
+
+    const { runId, ended } = tuloy.conductor.startRun(SAMPLE_GOAL);
+    await ended;
+
+    expect(tuloy.store.run(runId)?.status).toBe('done');
+    expect(trail(tuloy, runId, 'scripts')).toEqual([
+      'assign script',
+      'handoff checked content stored',
+      'dispatch started',
+      'injection reviewer_rejection',
+      'validate valid',
+      'review rejected',
+      'retry waiting',
+      'handoff checked content stored',
+      'dispatch started',
+      'validate valid',
+      'review pass',
+    ]);
+    // The injected rejection is a full rejection: verdict, score, issues, hints. The script agent gets it as input.
+    const review = tuloy.store.events(runId).find((e) => e.action === 'review')!;
+    expect((review.data as typeof rejection).reviews[0]).toEqual({ script_id: 's1', verdict: 'reject', score: 2, issues: ['Demo: the presenter injected this rejection.'], hints: ['Write the script again.'] });
+    const scriptCalls = tuloy.model.calls.filter((c) => c.role === 'script').map((c) => JSON.parse(c.prompt));
+    expect(scriptCalls[1].reviewer_hints).toEqual([{ script_id: 's1', issues: ['Demo: the presenter injected this rejection.'], hints: ['Write the script again.'] }]);
+    expect(tuloy.model.calls.filter((c) => c.role === 'reviewer')).toHaveLength(1);
+    expect(await (await fetch(`${url}/api/injections`)).json()).toEqual({ demo: true, injections: [] });
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
 });
