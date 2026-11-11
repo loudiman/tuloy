@@ -211,6 +211,20 @@ export function openStore(file: string, clock: { now(): number }) {
     useInvite(tokenHash: string): boolean {
       return db.prepare('UPDATE invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?').run(clock.now(), tokenHash, clock.now()).changes === 1;
     },
+    /** Does the writes of `work` as one transaction: all of them are in the file, or none. `work` must not wait for anything. */
+    transaction<T>(work: () => T): T {
+      db.exec('BEGIN');
+      try {
+        const result = work();
+        db.exec('COMMIT');
+        return result;
+      } catch (error) {
+        try {
+          db.exec('ROLLBACK');
+        } catch {} // the file is closed: SQLite dropped the open transaction already
+        throw error;
+      }
+    },
     close() {
       db.close();
     },

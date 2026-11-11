@@ -234,3 +234,60 @@ test('after a restart in the middle of the rewrite, the rejection still counts a
     ['scheduler', false],
   ]);
 });
+
+// ---- Review fix 2: a script is scheduled only after an explicit pass ----
+
+/** The reviewer passes s1 and says nothing of s2. */
+const noReviewOfS2 = { reviews: [{ script_id: 's1', verdict: 'pass', score: 8, issues: [], hints: [] }] };
+
+test('a script with no review is not scheduled: the review is a bad output of the reviewer, and the scheduler starts only after every script has a pass', async () => {
+  const tuloy = testTuloy({ script: { reviewer: [noReviewOfS2] } });
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(trail(tuloy, runId, 'review')).toEqual(['assign reviewer', 'handoff checked content stored', 'dispatch started', 'validate invalid_output', 'retry waiting', 'dispatch started', 'validate valid']);
+  const events = store.events(runId);
+  expect(events.find((e) => e.taskId === 'review' && e.result === 'invalid_output')!.cause).toBe('The output has no review of script s2.');
+  const pass = events.find((e) => e.action === 'review' && e.result === 'pass')!;
+  expect(events.filter((e) => e.taskId === 'schedule').every((e) => e.seq > pass.seq)).toBe(true);
+});
+
+test('when the reviewer never reviews every script, nothing is scheduled and the run ends as escalated', async () => {
+  const tuloy = testTuloy({ script: { reviewer: [noReviewOfS2, noReviewOfS2, noReviewOfS2] } });
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(trail(tuloy, runId, 'schedule')).toEqual([]);
+  expect(store.events(runId).some((e) => e.action === 'review' && e.result === 'pass')).toBe(false);
+});
+
+test('a stop in the middle of the writes of a rejection cannot let the scheduler start: after the restart the script is still not scheduled before a pass', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
+  const before = testTuloy({ file, script: { reviewer: [rejection] } });
+  // The stop: the program dies after the rejection event is written, at the write of the status `rejected` of the script task.
+  const write = before.store.updateTask;
+  before.store.updateTask = (run, task, patch) => {
+    if (patch.status === 'rejected') before.store.close();
+    write(run, task, patch);
+  };
+  const { runId, ended } = before.conductor.startRun(SAMPLE_GOAL);
+  await ended.catch(() => {});
+
+  const tuloy = testTuloy({ file, script: { reviewer: [rejection] } });
+  const { conductor, store } = tuloy;
+  // The reviewer task is not done with a rejection that was never written.
+  expect(store.tasks(runId).find((t) => t.id === 'review')!.status).not.toBe('done');
+  await conductor.continueRuns()[0].ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  const events = store.events(runId);
+  const pass = events.find((e) => e.action === 'review' && e.result === 'pass')!;
+  expect(events.some((e) => e.action === 'review' && e.result === 'rejected')).toBe(true);
+  expect(events.filter((e) => e.taskId === 'schedule').every((e) => e.seq > pass.seq)).toBe(true);
+});

@@ -1,6 +1,6 @@
 import type { LanguageModel } from 'ai';
 import type { z } from 'zod';
-import { runAgent, type Outside } from './agent-runner.ts';
+import { runAgent, type AgentResult, type Outside } from './agent-runner.ts';
 import type { Clock } from './clock.ts';
 import { peerAgentName, runPeerAgent } from './peer-agent.ts';
 import { createPeerClient, type A2aClient } from './peer-client.ts';
@@ -185,7 +185,7 @@ export function createConductor({
       if (injected === 'reviewer_rejection' && task.role === 'script') store.addInjection('reviewer', injected);
       // The time limit starts when the agent has its slot, not while it waits in line.
       const heartbeat = (cause: string) => () => void store.append({ runId, taskId, action: 'heartbeat', cause, result: 'alive' });
-      const result = stopped
+      let result: AgentResult = stopped
         ? { ok: false as const, failure: stopped }
         : peer || task.role === 'goal'
           ? await runPeerAgent(task.role, input, peer!, peerClient, {
@@ -197,6 +197,12 @@ export function createConductor({
             })
           : await withModelSlot(() => runAgent(task.role as Role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, outside, onHeartbeat: heartbeat('the agent waits for the model') }));
       stopped = null;
+      // A review must name every script. A script with no review has no pass, so the review is a bad output of the reviewer.
+      if (result.ok && task.role === 'reviewer') {
+        const { reviews } = result.output as z.infer<typeof skills.reviewer.output>;
+        const noReview = (input as z.infer<typeof skills.reviewer.input>).scripts.filter((s) => !reviews.some((r) => r.script_id === s.id));
+        if (noReview.length) result = { ok: false, failure: { kind: 'invalid_output', detail: `The output has no review of script ${noReview.map((s) => s.id).join(', ')}.` } };
+      }
       if (result.ok) {
         output = result.output;
         break;
@@ -255,10 +261,18 @@ export function createConductor({
       if (failure.kind === 'reviewer_rejection') handoff('the reviewer rejected the script');
       store.updateTask(runId, taskId, { status: 'recovering' });
     }
+    // The writes of a rejection are one transaction: a stop cannot leave a review task that is done without the rejection that it found.
+    const rejects = task.role === 'reviewer' && (output as z.infer<typeof skills.reviewer.output>).reviews.some((r) => r.verdict === 'reject');
+    return rejects ? store.transaction(() => finish(runId, task, deps, output)) : finish(runId, task, deps, output);
+  }
+
+  /** The writes at the end of a task that gave a valid output. For the reviewer: the pass, or the rejection of the script task. */
+  function finish(runId: number, task: Task, deps: Task[], output: unknown): 'done' | 'escalated' {
+    const taskId = task.id;
     store.append({ runId, taskId, action: 'validate', cause: `the output matches the ${task.role} schema`, result: 'valid' });
     store.updateTask(runId, taskId, { status: 'done', output });
 
-    // A rejection is a failure of the script task. The scheduler starts only after a pass.
+    // A rejection is a failure of the script task. The scheduler starts only after every script has a pass.
     if (task.role === 'reviewer') {
       const { reviews } = output as z.infer<typeof skills.reviewer.output>;
       const rejected = reviews.filter((r) => r.verdict === 'reject');
