@@ -38,7 +38,8 @@ async function invite(a: Started, b: Started) {
 
 const down = () => new Error('503 model down');
 const scriptModelsDown = () => ({ script: { script: [down()] }, backupScript: { script: [down()] } });
-const scriptsTask = ({ store }: Started, runId: number) => taskViews(store.tasks(runId), store.events(runId)).find((t) => t.id === 'scripts')!;
+// Version 1 of the task graph: when the peer step fails, the full goal goes to the peer as version 2 (tests/peer-goal.test.ts).
+const scriptsTask = ({ store }: Started, runId: number) => taskViews(store.tasks(runId, 1), store.events(runId)).find((t) => t.id === 'scripts')!;
 const trail = ({ store }: Started, runId: number) => store.events(runId).filter((e) => e.taskId === 'scripts').map((e) => `${e.action} ${e.result}`);
 
 test('two real Tuloys: with the own models down, the script task crosses to the peer, comes back checked, and the run ends as done', async () => {
@@ -72,7 +73,7 @@ test('the same-machine setting is off by default: the address of a Tuloy on this
 
   expect(sam.store.run(runId)?.status).toBe('escalated');
   expect(scriptsTask(sam, runId).stuckReason).toBe(
-    "Script task failed: Lou's script agent failed: The outside agent's address is refused: it is not https. The re-route to a peer failed. The run ended as escalated.",
+    "Script task failed: Lou's script agent failed: The outside agent's address is refused: it is not https.",
   );
   expect(lou.store.runs()).toEqual([]);
   const setting = (env: Record<string, string>) => readSettings(env).peerAllowLocal;
@@ -81,8 +82,9 @@ test('the same-machine setting is off by default: the address of a Tuloy on this
 
 test('work that came from a peer is never sent to another peer, and not back to the peer that sent it', async () => {
   // Lou's models are down, so Lou sends the script task to Sam. Sam's models are down too. Sam has two peers: Lou and Ana.
+  // Sam's models stay down for the full goal that Lou gives next (step 4).
   const lou = await startTuloy('Lou', scriptModelsDown());
-  const sam = await startTuloy('Sam', scriptModelsDown());
+  const sam = await startTuloy('Sam', { script: { script: [down(), down()] }, backupScript: { script: [down(), down()] } });
   const ana = await startTuloy('Ana');
   await invite(lou, sam);
   await invite(sam, ana);
@@ -91,14 +93,15 @@ test('work that came from a peer is never sent to another peer, and not back to 
   await ended;
 
   // Sam's run for Lou stops after its own two models: no re-route, to nobody.
-  const [forLou] = sam.store.runs();
-  expect(sam.store.runs()).toMatchObject([{ forPeer: 'Lou', status: 'escalated' }]);
+  // Sam has two runs for Lou: the script task, and then the full goal. Both stop there.
+  const forLou = sam.store.runs().at(-1);
+  expect(sam.store.runs()).toMatchObject([{ forPeer: 'Lou', status: 'escalated' }, { forPeer: 'Lou', status: 'escalated' }]);
   expect(trail(sam, forLou!.id)).toEqual(['peer_task accepted for Lou', 'assign script', 'dispatch started', 'model_call model_unavailable', 'reroute backup model', 'dispatch started', 'model_call model_unavailable', 'escalate escalated']);
   expect(ana.store.runs()).toEqual([]);
   // Lou got one answer: Sam's agent failed. The task did not come back to Lou as work for Sam.
   expect(lou.store.runs()).toMatchObject([{ id: runId, forPeer: null, status: 'escalated' }]);
   expect(scriptsTask(lou, runId).stuckReason).toBe(
-    "Script task failed: Sam's script agent failed: The script agent did not finish the task: escalated. The re-route to a peer failed. The run ended as escalated.",
+    "Script task failed: Sam's script agent failed: The script agent did not finish the task: escalated.",
   );
 });
 
@@ -111,6 +114,6 @@ test('a peer that is over its limit of tasks per hour refuses, and the run ends 
   await ended;
 
   expect(sam.store.run(runId)?.status).toBe('escalated');
-  expect(scriptsTask(sam, runId).stuckReason).toBe('Script task failed: Lou refused the task: Sam is at the limit of 0 tasks per hour. The re-route to a peer failed. The run ended as escalated.');
+  expect(scriptsTask(sam, runId).stuckReason).toBe('Script task failed: Lou refused the task: Sam is at the limit of 0 tasks per hour.');
   expect(lou.store.runs()).toEqual([]);
 });

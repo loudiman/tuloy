@@ -199,7 +199,7 @@ test('the agent card is at the well-known address and lists a skill for each age
   const card = (await (await fetch(`${sam.url}/.well-known/agent-card.json`)).json()) as any;
 
   expect(card.name).toBe('Tuloy of Sam');
-  expect(card.skills.map((s: any) => s.id)).toEqual(['trend_scout', 'script', 'reviewer', 'scheduler']);
+  expect(card.skills.map((s: any) => s.id)).toEqual(['trend_scout', 'script', 'reviewer', 'scheduler', 'goal']);
   expect(card.supportedInterfaces).toEqual([{ url: `${sam.url}/a2a`, protocolBinding: 'JSONRPC', protocolVersion: '1.0' }]);
 });
 
@@ -303,7 +303,7 @@ test('the peers screen gets, for each peer: name, address, what it lends from it
       {
         name: 'Lou',
         address: lou.url,
-        lends: ['trend scout', 'script', 'reviewer', 'scheduler'],
+        lends: ['trend scout', 'script', 'reviewer', 'scheduler', 'full goal'],
         tasksInLastHour: 1,
         sendKeyEnd: sendKey.slice(-4),
         acceptKeyEnd: acceptKey.slice(-4),
@@ -329,7 +329,7 @@ test('any A2A agent can be added by address and key; it can take work and cannot
   expect(added.status).toBe(201);
   expect([noKey.status, notWeb.status]).toEqual([400, 400]);
   expect(list.peers).toEqual([
-    { name: 'Script helper', address: agent.url, lends: ['trend scout', 'script', 'reviewer', 'scheduler'], tasksInLastHour: 0, sendKeyEnd: 'gent', acceptKeyEnd: expect.any(String) },
+    { name: 'Script helper', address: agent.url, lends: ['trend scout', 'script', 'reviewer', 'scheduler', 'full goal'], tasksInLastHour: 0, sendKeyEnd: 'gent', acceptKeyEnd: expect.any(String) },
   ]);
   // The key that Sam sends with is the one the owner typed, and it works at the outside agent.
   const { sendKey, acceptKey } = sam.store.peers()[0]!;

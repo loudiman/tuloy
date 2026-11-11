@@ -65,7 +65,7 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour }: 
       if (!message.success) return begin('TASK_STATE_REJECTED', HOW_TO_SEND);
       const role = message.data.skill;
       const input = skills[role].input.safeParse(message.data.input);
-      if (!input.success) return begin('TASK_STATE_REJECTED', `The input does not match the input schema of the ${role} skill: ${z.prettifyError(input.error)}`);
+      if (!input.success) return begin('TASK_STATE_REJECTED', `The input does not match the input schema of the ${role === 'goal' ? 'goal skill' : `${role} agent`}: ${z.prettifyError(input.error)}`);
       if (store.peerRunsInLastHour(peer) >= peerTasksPerHour) return begin('TASK_STATE_REJECTED', `${peer} is at the limit of ${peerTasksPerHour} tasks per hour.`);
 
       begin('TASK_STATE_WORKING');

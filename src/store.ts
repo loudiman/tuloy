@@ -134,9 +134,9 @@ export function openStore(file: string, clock: { now(): number }) {
     runs(): Run[] {
       return db.prepare('SELECT * FROM runs ORDER BY id DESC').all().map(toRun);
     },
-    /** The tasks of the newest version of the run's task graph. */
-    tasks(runId: number): Task[] {
-      return db.prepare('SELECT * FROM tasks WHERE run_id = ?1 AND version = (SELECT MAX(version) FROM tasks WHERE run_id = ?1) ORDER BY position').all(runId).map(toTask);
+    /** The tasks of the newest version of the run's task graph, or of the version given. */
+    tasks(runId: number, version: number | null = null): Task[] {
+      return db.prepare('SELECT * FROM tasks WHERE run_id = ?1 AND version = COALESCE(?2, (SELECT MAX(version) FROM tasks WHERE run_id = ?1)) ORDER BY position').all(runId, version).map(toTask);
     },
     events(runId: number): TuloyEvent[] {
       return db.prepare('SELECT * FROM events WHERE run_id = ? ORDER BY seq').all(runId).map(toEvent);
