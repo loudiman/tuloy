@@ -22,7 +22,7 @@ export const slow = (ms: number) => ({ [hang]: ms });
  *   scriptedModel({ script: [new Error('model down')] })       // first script call fails
  */
 export function scriptedModel(script: Partial<Record<Role, Step[]>> = {}, clock?: Clock) {
-  const calls: { role: Role; prompt: string }[] = [];
+  const calls: { role: Role; prompt: string; maxOutputTokens?: number }[] = [];
   /** `atTheSameTime` is the highest number of slow calls that were open together. */
   const most = { atTheSameTime: 0 };
   let open = 0;
@@ -38,7 +38,7 @@ export function scriptedModel(script: Partial<Record<Role, Step[]>> = {}, clock?
         .flatMap((m) => m.content)
         .map((part) => (part.type === 'text' ? part.text : ''))
         .join('\n');
-      calls.push({ role, prompt });
+      calls.push({ role, prompt, maxOutputTokens: options.maxOutputTokens });
       const steps = left[role];
       let step = steps?.length ? steps.shift() : goodOutput[role];
       if (typeof step === 'object' && step !== null && hang in step) {

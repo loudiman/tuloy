@@ -20,6 +20,8 @@ export function readSettings(env: Record<string, string | undefined>) {
       heartbeatMissedMs: Number(env.TULOY_HEARTBEAT_MISSED_MS || 20_000),
       /** At most this number of model calls run at the same time, over all runs. */
       maxModelCalls: Number(env.TULOY_MAX_MODEL_CALLS || 2),
+      /** The limit on output tokens of each model call. */
+      maxOutputTokens: Number(env.TULOY_MAX_OUTPUT_TOKENS || 2000),
     },
   };
 }

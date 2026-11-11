@@ -20,7 +20,7 @@ export type AgentResult = { ok: true; output: unknown } | { ok: false; failure: 
 
 export type RunOptions = {
   clock: Clock;
-  limits: Pick<Limits, 'taskTimeLimitMs' | 'heartbeatMs' | 'heartbeatMissedMs'>;
+  limits: Pick<Limits, 'taskTimeLimitMs' | 'heartbeatMs' | 'heartbeatMissedMs' | 'maxOutputTokens'>;
   /** Called for each heartbeat that the agent sends while it waits for the model. */
   onHeartbeat?: () => void;
   /** Demo mode: `timeout` makes the agent silent (no model call, no heartbeat); `invalid_output` makes its output fail the schema. */
@@ -57,7 +57,7 @@ export async function runAgent(role: Role, input: unknown, model: LanguageModel,
     ? new Promise<never>(() => {})
     : injected === 'invalid_output'
       ? Promise.resolve(check(role, { injected: 'an output that does not match the schema' }))
-      : callModel(role, input, model, stop.signal, clock);
+      : callModel(role, input, model, stop.signal, clock, limits.maxOutputTokens);
   try {
     return await Promise.race([answer, watch()]);
   } finally {
@@ -71,7 +71,7 @@ function check(role: Role, output: unknown): AgentResult {
   return checked.success ? { ok: true, output: checked.data } : { ok: false, failure: { kind: 'invalid_output', detail: checked.error.message } };
 }
 
-async function callModel(role: Role, input: unknown, model: LanguageModel, abortSignal: AbortSignal, clock: Clock): Promise<AgentResult> {
+async function callModel(role: Role, input: unknown, model: LanguageModel, abortSignal: AbortSignal, clock: Clock, maxOutputTokens: number): Promise<AgentResult> {
   const schema: z.ZodType = roles[role].output;
   try {
     const result = await generateText({
@@ -81,10 +81,12 @@ async function callModel(role: Role, input: unknown, model: LanguageModel, abort
       output: Output.object({ schema }),
       maxRetries: 0, // the conductor owns retries
       abortSignal,
+      maxOutputTokens, // with no limit the provider reserves the model's maximum, and a small credit balance refuses the call
     });
     return check(role, result.output);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    // A provider can put an address with a key id in its error text. No address goes into the event log.
+    const detail = (error instanceof Error ? error.message : String(error)).replace(/https?:\/\/[^\s)]+/g, '[address removed]');
     if (NoObjectGeneratedError.isInstance(error) || NoOutputGeneratedError.isInstance(error)) return { ok: false, failure: { kind: 'invalid_output', detail } };
     if (APICallError.isInstance(error) && error.statusCode === 429) {
       // Retry-After is a number of seconds or a date.

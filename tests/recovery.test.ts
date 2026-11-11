@@ -179,3 +179,29 @@ test('the limit on model calls at the same time is a setting', async () => {
 
   expect(model.most.atTheSameTime).toBe(3);
 });
+
+test('every model call has the limit on output tokens of the settings', async () => {
+  const usual = testTuloy();
+  await usual.conductor.startRun(SAMPLE_GOAL).ended;
+  const small = testTuloy({ limits: { maxOutputTokens: 500 } });
+  await small.conductor.startRun(SAMPLE_GOAL).ended;
+
+  expect(usual.model.calls.map((c) => c.maxOutputTokens)).toEqual([2000, 2000, 2000, 2000]);
+  expect(small.model.calls.map((c) => c.maxOutputTokens)).toEqual([500, 500, 500, 500]);
+});
+
+test('a model error is model_unavailable, and its text is stored without the address that was in it', async () => {
+  const noCredits = new Error('This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 2787. To increase, visit https://openrouter.ai/settings/keys/key-id-123 and add credits');
+  const tuloy = testTuloy({ script: { script: [noCredits] } });
+
+  const { runId, ended } = tuloy.conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  const failure = tuloy.store.events(runId).find((e) => e.action === 'model_call')!;
+  expect(failure).toMatchObject({
+    taskId: 'scripts',
+    result: 'model_unavailable',
+    cause: 'This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 2787. To increase, visit [address removed] and add credits',
+  });
+  expect(JSON.stringify(tuloy.store.events(runId))).not.toContain('key-id-123');
+});
