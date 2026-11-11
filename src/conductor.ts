@@ -1,6 +1,6 @@
 import type { LanguageModel } from 'ai';
 import type { z } from 'zod';
-import { runAgent } from './agent-runner.ts';
+import { runAgent, type Outside } from './agent-runner.ts';
 import type { Clock } from './clock.ts';
 import { peerAgentName, runPeerAgent } from './peer-agent.ts';
 import { createPeerClient, type A2aClient } from './peer-client.ts';
@@ -129,6 +129,11 @@ export function createConductor({
     if (deps.length && !afterRestart) {
       store.append({ runId, taskId, action: 'handoff', cause: `${deps.map((d) => d.id).join(', ')} done`, result: 'checked content stored', data: { from: deps.map((d) => d.id), content: input } });
     }
+    // A task that a peer's agent finished has a `reroute` event with the peer. Its output is outside text for the next agent.
+    const outside: Outside[] = deps.flatMap((d) => {
+      const from = (store.events(runId).findLast((e) => e.taskId === d.id && e.action === 'reroute')?.data as { peer?: string } | null)?.peer;
+      return from ? [{ from, task: d.id, keys: Object.keys(d.output as object) }] : [];
+    });
     // One turn of this loop is one attempt. The earlier failures of the task are the history for the recovery policy.
     // After a restart they come from the event log, so that a restart does not give the task new retries.
     const mine = afterRestart ? store.events(runId).filter((e) => e.taskId === taskId) : [];
@@ -158,7 +163,7 @@ export function createConductor({
         ? { ok: false as const, failure: stopped }
         : peer
           ? await runPeerAgent(task.role, input, peer, peerClient, { clock, limits, onHeartbeat: heartbeat(`${peer.name}'s Tuloy answered: the task is in work`) })
-          : await withModelSlot(() => runAgent(task.role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, onHeartbeat: heartbeat('the agent waits for the model') }));
+          : await withModelSlot(() => runAgent(task.role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, outside, onHeartbeat: heartbeat('the agent waits for the model') }));
       stopped = null;
       if (result.ok) {
         output = result.output;
