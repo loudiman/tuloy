@@ -85,3 +85,59 @@ test('a task that was running at the stop gets a stalled status, an event that n
   expect(events.findLast((e) => e.action === 'dispatch' && e.taskId === 'scripts')).toMatchObject({ cause: 'retry 1 of 2', time: restartedAt + 2000 });
   expect(store.run(runId)?.status).toBe('done');
 });
+
+test('failures from before the stop count against the retry limit after the restart', async () => {
+  const junk = { scripts: 'junk' };
+  const file = newFile();
+  // The stop comes in the second attempt of the scripts task: one bad output is in the event log.
+  const runId = await stopInTheMiddle(file, '2nd dispatch started', { script: [junk] });
+
+  const tuloy = testTuloy({ file, script: { script: [junk] } });
+  const { conductor, store, model } = tuloy;
+  expect(store.tasks(runId)[1].status).toBe('recovering');
+
+  await conductor.continueRuns()[0].ended;
+
+  // Bad output (retry 1), the stop (retry 2), one more bad output: the limit of 2 retries is used.
+  expect(trail(tuloy, runId, 'scripts').slice(2)).toEqual([
+    'dispatch started',
+    'validate invalid_output',
+    'retry waiting',
+    'dispatch started',
+    // the stop was here
+    'watch missed_heartbeat',
+    'retry waiting',
+    'dispatch started',
+    'validate invalid_output',
+    'escalate escalated',
+  ]);
+  expect(store.events(runId).filter((e) => e.action === 'retry').map((e) => e.data)).toMatchObject([{ retry: 1, of: 2, waitMs: 2000 }, { retry: 2, of: 2, waitMs: 4000 }]);
+  expect(model.calls.map((c) => c.role)).toEqual(['script']);
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(store.tasks(runId)[1].status).toBe('escalated');
+});
+
+test('a restart does not touch runs that ended, and continues a run that was stopped between two tasks', async () => {
+  const junk = { scripts: 'junk' };
+  const file = newFile();
+  const before = testTuloy({ file, script: { script: [junk, junk, junk] } });
+  const escalated = before.conductor.startRun(SAMPLE_GOAL);
+  await escalated.ended;
+  const done = before.conductor.startRun(SAMPLE_GOAL);
+  await done.ended;
+  const eventsBefore = [before.store.events(escalated.runId), before.store.events(done.runId)];
+  before.store.close();
+  // The third run stops when the review task is done and the schedule task did not start yet.
+  const runId = await stopInTheMiddle(file, 'review pass');
+
+  const { conductor, store, model } = testTuloy({ file });
+  const continued = conductor.continueRuns();
+  await Promise.all(continued.map((c) => c.ended));
+
+  expect(continued.map((c) => c.runId)).toEqual([runId]);
+  expect([store.events(escalated.runId), store.events(done.runId)]).toEqual(eventsBefore);
+  expect(store.runs().map((r) => r.status)).toEqual(['done', 'done', 'escalated']);
+  // No task was in work at the stop: no failure, no retry.
+  expect(store.events(runId).filter((e) => ['watch', 'retry'].includes(e.action))).toEqual([]);
+  expect(model.calls.map((c) => c.role)).toEqual(['scheduler']);
+});

@@ -115,7 +115,13 @@ export function createConductor({ store, models, clock, limits }: { store: Store
       store.append({ runId, taskId, action: 'handoff', cause: `${deps.map((d) => d.id).join(', ')} done`, result: 'checked content stored', data: { from: deps.map((d) => d.id), content: input } });
     }
     // One turn of this loop is one attempt. The earlier failures of the task are the history for the recovery policy.
-    const history: Failure[] = [];
+    // After a restart they come from the event log, so that a restart does not give the task new retries.
+    const history: Failure[] = !afterRestart
+      ? []
+      : store
+          .events(runId)
+          .filter((e) => e.taskId === taskId && e.result in failureAction && e.action === failureAction[e.result as Failure['kind']])
+          .map((e) => ({ kind: e.result as Failure['kind'], detail: e.cause }));
     let output: unknown;
     // After a restart the first turn makes no attempt: the stop is the failure, and recovery starts from it.
     let stopped: Failure | null = afterRestart ? { kind: 'missed_heartbeat', detail: 'Tuloy restarted while the task was in work' } : null;
