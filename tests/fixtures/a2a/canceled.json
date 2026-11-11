@@ -1,0 +1,185 @@
+{
+  "case": "canceled",
+  "exchanges": [
+    {
+      "request": {
+        "headers": {
+          "A2A-Version": "1.0",
+          "Authorization": "Bearer [redacted]"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "SendMessage",
+          "params": {
+            "message": {
+              "messageId": "message-canceled-1",
+              "role": "ROLE_USER",
+              "parts": [
+                {
+                  "text": "cancel"
+                }
+              ]
+            },
+            "configuration": {
+              "returnImmediately": true
+            }
+          }
+        }
+      },
+      "status": 200,
+      "response": {
+        "result": {
+          "task": {
+            "id": "id-1",
+            "contextId": "id-2",
+            "status": {
+              "state": "TASK_STATE_SUBMITTED"
+            },
+            "history": [
+              {
+                "messageId": "message-canceled-1",
+                "contextId": "id-2",
+                "taskId": "id-1",
+                "role": "ROLE_USER",
+                "parts": [
+                  {
+                    "text": "cancel"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "id": 1,
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "request": {
+        "headers": {
+          "A2A-Version": "1.0",
+          "Authorization": "Bearer [redacted]"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "GetTask",
+          "params": {
+            "id": "id-1"
+          }
+        }
+      },
+      "status": 200,
+      "response": {
+        "result": {
+          "id": "id-1",
+          "contextId": "id-2",
+          "status": {
+            "state": "TASK_STATE_WORKING",
+            "timestamp": "2026-01-01T00:00:00Z"
+          },
+          "history": [
+            {
+              "messageId": "message-canceled-1",
+              "contextId": "id-2",
+              "taskId": "id-1",
+              "role": "ROLE_USER",
+              "parts": [
+                {
+                  "text": "cancel"
+                }
+              ]
+            }
+          ]
+        },
+        "id": 3,
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "request": {
+        "headers": {
+          "A2A-Version": "1.0",
+          "Authorization": "Bearer [redacted]"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "CancelTask",
+          "params": {
+            "id": "id-1"
+          }
+        }
+      },
+      "status": 200,
+      "response": {
+        "result": {
+          "id": "id-1",
+          "contextId": "id-2",
+          "status": {
+            "state": "TASK_STATE_CANCELED",
+            "timestamp": "2026-01-01T00:00:00Z"
+          },
+          "history": [
+            {
+              "messageId": "message-canceled-1",
+              "contextId": "id-2",
+              "taskId": "id-1",
+              "role": "ROLE_USER",
+              "parts": [
+                {
+                  "text": "cancel"
+                }
+              ]
+            }
+          ]
+        },
+        "id": 2,
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "request": {
+        "headers": {
+          "A2A-Version": "1.0",
+          "Authorization": "Bearer [redacted]"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "GetTask",
+          "params": {
+            "id": "id-1"
+          }
+        }
+      },
+      "status": 200,
+      "response": {
+        "result": {
+          "id": "id-1",
+          "contextId": "id-2",
+          "status": {
+            "state": "TASK_STATE_CANCELED",
+            "timestamp": "2026-01-01T00:00:00Z"
+          },
+          "history": [
+            {
+              "messageId": "message-canceled-1",
+              "contextId": "id-2",
+              "taskId": "id-1",
+              "role": "ROLE_USER",
+              "parts": [
+                {
+                  "text": "cancel"
+                }
+              ]
+            }
+          ]
+        },
+        "id": 3,
+        "jsonrpc": "2.0"
+      }
+    }
+  ]
+}

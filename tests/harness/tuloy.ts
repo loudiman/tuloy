@@ -1,5 +1,6 @@
 import type { Clock } from '../../src/clock.ts';
 import { createConductor } from '../../src/conductor.ts';
+import { fakeA2a, type A2aAnswer, type A2aClient } from '../../src/peer-client.ts';
 import { defaultLimits, type Limits } from '../../src/settings.ts';
 import { openStore } from '../../src/store.ts';
 import { scriptedModel, type Step } from './scripted-model.ts';
@@ -45,12 +46,15 @@ export function fakeClock(start = Date.parse('2026-11-12T09:00:00+08:00')): Cloc
  * One Tuloy for a test: a store (in memory unless `file` is given), a fake clock, a scripted model and a conductor.
  * `model` is the primary model. `backup` is a second scripted model with its own `calls`. With no `backupScript` it has
  * its own copy of `script`: a model failure in a test is a failure of both models. `backupScript: {}` is a backup model with no failure.
+ * `peer` is the scripted fake peer client: it plays the answers of `options.peer` in order and repeats the last; `peer.calls` holds each move.
+ * `peerClient` puts another client in its place (the real one, for a test with two real Tuloys).
  */
-export function testTuloy(options: { script?: Partial<Record<Role, Step[]>>; backupScript?: Partial<Record<Role, Step[]>>; file?: string; limits?: Partial<Limits> } = {}) {
+export function testTuloy(options: { script?: Partial<Record<Role, Step[]>>; backupScript?: Partial<Record<Role, Step[]>>; file?: string; limits?: Partial<Limits>; peer?: A2aAnswer[]; peerClient?: A2aClient } = {}) {
   const clock = fakeClock();
   const store = openStore(options.file ?? ':memory:', clock);
   const model = scriptedModel(options.script, clock);
   const backup = scriptedModel(options.backupScript ?? options.script, clock);
-  const conductor = createConductor({ store, models: { primary: model, backup }, clock, limits: { ...defaultLimits, ...options.limits } });
-  return { clock, store, model, backup, conductor };
+  const peer = fakeA2a(options.peer ?? [{ status: 'failed', failure: 'unreachable', text: 'The outside agent could not be reached.', taskId: null, contextId: null }]);
+  const conductor = createConductor({ store, models: { primary: model, backup }, clock, limits: { ...defaultLimits, ...options.limits }, peerClient: options.peerClient ?? peer });
+  return { clock, store, model, backup, peer, conductor };
 }

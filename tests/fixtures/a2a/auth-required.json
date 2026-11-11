@@ -1,0 +1,112 @@
+{
+  "case": "auth-required",
+  "exchanges": [
+    {
+      "request": {
+        "headers": {
+          "A2A-Version": "1.0",
+          "Authorization": "Bearer [redacted]"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "SendMessage",
+          "params": {
+            "message": {
+              "messageId": "message-auth-required-1",
+              "role": "ROLE_USER",
+              "parts": [
+                {
+                  "text": "auth"
+                }
+              ]
+            },
+            "configuration": {
+              "returnImmediately": true
+            }
+          }
+        }
+      },
+      "status": 200,
+      "response": {
+        "result": {
+          "task": {
+            "id": "id-1",
+            "contextId": "id-2",
+            "status": {
+              "state": "TASK_STATE_SUBMITTED"
+            },
+            "history": [
+              {
+                "messageId": "message-auth-required-1",
+                "contextId": "id-2",
+                "taskId": "id-1",
+                "role": "ROLE_USER",
+                "parts": [
+                  {
+                    "text": "auth"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "id": 1,
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "request": {
+        "headers": {
+          "A2A-Version": "1.0",
+          "Authorization": "Bearer [redacted]"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "GetTask",
+          "params": {
+            "id": "id-1"
+          }
+        }
+      },
+      "status": 200,
+      "response": {
+        "result": {
+          "id": "id-1",
+          "contextId": "id-2",
+          "status": {
+            "state": "TASK_STATE_AUTH_REQUIRED",
+            "message": {
+              "messageId": "id-3",
+              "contextId": "id-2",
+              "taskId": "id-1",
+              "role": "ROLE_AGENT",
+              "parts": [
+                {
+                  "text": "Sign in to the booking portal first."
+                }
+              ]
+            },
+            "timestamp": "2026-01-01T00:00:00Z"
+          },
+          "history": [
+            {
+              "messageId": "message-auth-required-1",
+              "contextId": "id-2",
+              "taskId": "id-1",
+              "role": "ROLE_USER",
+              "parts": [
+                {
+                  "text": "auth"
+                }
+              ]
+            }
+          ]
+        },
+        "id": 3,
+        "jsonrpc": "2.0"
+      }
+    }
+  ]
+}

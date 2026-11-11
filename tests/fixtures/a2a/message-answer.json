@@ -1,0 +1,21 @@
+{
+  "case": "hand-written: a real outside agent can answer a send with a plain Message; the test partner never does",
+  "exchanges": [
+    {
+      "request": { "body": { "method": "SendMessage" } },
+      "status": 200,
+      "response": {
+        "result": {
+          "message": {
+            "messageId": "answer-1",
+            "contextId": "context-message",
+            "role": "ROLE_AGENT",
+            "parts": [{ "text": "Friday 09:00 is free." }]
+          }
+        },
+        "id": 1,
+        "jsonrpc": "2.0"
+      }
+    }
+  ]
+}

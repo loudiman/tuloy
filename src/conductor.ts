@@ -2,11 +2,13 @@ import type { LanguageModel } from 'ai';
 import type { z } from 'zod';
 import { runAgent } from './agent-runner.ts';
 import type { Clock } from './clock.ts';
+import { peerAgentName, runPeerAgent } from './peer-agent.ts';
+import { createPeerClient, type A2aClient } from './peer-client.ts';
 import { planTaskGraph } from './planner.ts';
 import { nextAction, type Failure } from './recovery-policy.ts';
 import { roles, type Role } from './schemas.ts';
 import type { Limits } from './settings.ts';
-import type { Store, TaskStatus } from './store.ts';
+import type { Peer, Store, TaskStatus } from './store.ts';
 
 export type Conductor = ReturnType<typeof createConductor>;
 
@@ -15,7 +17,20 @@ export type Conductor = ReturnType<typeof createConductor>;
  * Recovery: a failed or stalled task goes to the recovery policy; the conductor does the action that the policy returns.
  * ponytail: in one run, tasks start one at a time (the template graph never has two ready tasks). Runs go side by side.
  */
-export function createConductor({ store, models, clock, limits }: { store: Store; models: { primary: LanguageModel; backup: LanguageModel }; clock: Clock; limits: Limits }) {
+export function createConductor({
+  store,
+  models,
+  clock,
+  limits,
+  peerClient = createPeerClient(),
+}: {
+  store: Store;
+  models: { primary: LanguageModel; backup: LanguageModel };
+  clock: Clock;
+  limits: Limits;
+  /** Sends a task to a peer (step 3 of the recovery order). The default refuses private and same-machine addresses. */
+  peerClient?: A2aClient;
+}) {
   // At most `limits.maxModelCalls` agents run at the same time, over all runs of this Tuloy. The others wait in line.
   let freeSlots = limits.maxModelCalls;
   const line: (() => void)[] = [];
@@ -123,39 +138,37 @@ export function createConductor({ store, models, clock, limits }: { store: Store
       .map((e) => ({ kind: e.result as Failure['kind'], detail: e.cause, onBackup: rerouted !== undefined && e.seq > rerouted }));
     let output: unknown;
     // The backup model is in use from the `reroute` event on. After a restart that also comes from the event log.
-    let model: 'primary' | 'backup' = rerouted !== undefined ? 'backup' : 'primary';
+    let model: 'primary' | 'backup' | 'peer' = rerouted !== undefined ? 'backup' : 'primary';
+    // Step 3: the peer that has the task.
+    let peer: Peer | undefined;
     let allDown: string | undefined;
     // After a restart the first turn makes no attempt: the stop is the failure, and recovery starts from it.
     let stopped: Failure | null = afterRestart ? { kind: 'missed_heartbeat', detail: 'Tuloy restarted while the task was in work' } : null;
     for (;;) {
-      const why = model === 'backup' ? 're-routed to the backup model' : history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done';
+      const why = model === 'peer' ? `re-routed to ${peerAgentName(peer!, task.role)}` : model === 'backup' ? 're-routed to the backup model' : history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done';
       if (!stopped) store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'started' });
       // Demo mode: a pending injection for this agent is used now, one time. Injections act on the primary model;
       // only an outage of all own models goes with the task to the backup model.
-      const injected = stopped ? undefined : model === 'primary' ? store.takeInjection(task.role) : allDown;
+      const injected = stopped || model === 'peer' ? undefined : model === 'primary' ? store.takeInjection(task.role) : allDown;
       if (injected === 'all_models_outage') allDown = injected;
       if (injected && model === 'primary') store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
       // The time limit starts when the agent has its slot, not while it waits in line.
+      const heartbeat = (cause: string) => () => void store.append({ runId, taskId, action: 'heartbeat', cause, result: 'alive' });
       const result = stopped
         ? { ok: false as const, failure: stopped }
-        : await withModelSlot(() =>
-        runAgent(task.role, input, models[model], {
-          clock,
-          limits,
-          injected,
-          onHeartbeat: () => store.append({ runId, taskId, action: 'heartbeat', cause: 'the agent waits for the model', result: 'alive' }),
-        }),
-      );
+        : model === 'peer'
+          ? await runPeerAgent(task.role, input, peer!, peerClient, { clock, limits, onHeartbeat: heartbeat(`${peer!.name}'s Tuloy answered: the task is in work`) })
+          : await withModelSlot(() => runAgent(task.role, input, models[model as 'primary' | 'backup'], { clock, limits, injected, onHeartbeat: heartbeat('the agent waits for the model') }));
       stopped = null;
       if (result.ok) {
         output = result.output;
         break;
       }
-      const failure: Failure = { ...result.failure, onBackup: model === 'backup' };
+      const failure: Failure = { ...result.failure, onBackup: model === 'backup', onPeer: model === 'peer' };
       store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind });
       store.updateTask(runId, taskId, { status: failedStatus[failure.kind] });
 
-      const action = nextAction(failure, history, limits);
+      const action = nextAction(failure, history, limits, { forPeer: run.forPeer !== null });
       if (action.do === 'escalate') {
         store.append({ runId, taskId, action: 'escalate', cause: action.cause, result: 'escalated' });
         store.updateTask(runId, taskId, { status: 'escalated' });
@@ -166,6 +179,13 @@ export function createConductor({ store, models, clock, limits }: { store: Store
         // Step 2: the same checked input goes to the backup model. The switch is one event.
         store.append({ runId, taskId, action: 'reroute', cause: action.cause, result: 'backup model', data: action });
         model = 'backup';
+      } else if (action.do === 'peer') {
+        // Step 3: the same checked input goes to the same agent of a peer. ponytail: the first peer of the allowed list gets it; try the others in turn when one peer is not enough.
+        peer = store.peers()[0];
+        model = 'peer';
+        const agent = peerAgentName(peer, task.role);
+        store.append({ runId, taskId, action: 'reroute', cause: action.cause, result: agent, data: { ...action, peer: peer.name } });
+        store.updateTask(runId, taskId, { agent });
       } else {
         store.append({ runId, taskId, action: 'retry', cause: failure.kind, result: 'waiting', data: action });
         await clock.sleep(action.waitMs);
@@ -205,6 +225,8 @@ const failedStatus: Record<Failure['kind'], TaskStatus> = {
   invalid_output: 'failed_validation',
   model_unavailable: 'model_unavailable',
   rate_limited: 'model_unavailable',
+  // The stored statuses have no word for a peer. The owner's models are down and no peer finished the task.
+  peer_failed: 'model_unavailable',
 };
 
 /** The event action that finds each failure. */
@@ -214,4 +236,5 @@ const failureAction: Record<Failure['kind'], string> = {
   invalid_output: 'validate',
   model_unavailable: 'model_call',
   rate_limited: 'model_call',
+  peer_failed: 'peer_call',
 };

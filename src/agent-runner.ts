@@ -71,7 +71,7 @@ export async function runAgent(role: Role, input: unknown, model: LanguageModel,
 }
 
 /** Tuloy checks every output with its own schema in any case. The parse also drops fields that are not in the schema. */
-function check(role: Role, output: unknown): AgentResult {
+export function check(role: Role, output: unknown): AgentResult {
   const checked = (roles[role].output as z.ZodType).safeParse(output);
   return checked.success ? { ok: true, output: checked.data } : { ok: false, failure: { kind: 'invalid_output', detail: checked.error.message } };
 }
