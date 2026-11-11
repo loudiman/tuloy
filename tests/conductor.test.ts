@@ -158,30 +158,6 @@ test.each([
   expect(store.run(runId)?.status).toBe(status);
 });
 
-test('a script that the reviewer rejects is never scheduled', async () => {
-  const reviews = [
-    { script_id: 's1', verdict: 'reject', issues: ['The hook is weak.'] },
-    { script_id: 's2', verdict: 'pass', issues: [] },
-  ];
-  const { conductor, store } = testTuloy({ script: { reviewer: [{ reviews }] } });
-
-  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
-  await ended;
-
-  expect(store.run(runId)?.status).toBe('escalated');
-  expect(store.tasks(runId).map((t) => [t.id, t.status])).toEqual([
-    ['trends', 'done'],
-    ['scripts', 'rejected'],
-    ['review', 'done'],
-    ['schedule', 'waiting_on_dependency'],
-  ]);
-  expect(store.events(runId).slice(-2)).toMatchObject([
-    { taskId: 'scripts', action: 'review', result: 'rejected', cause: 's1: The hook is weak.' },
-    { taskId: null, action: 'end', result: 'escalated' },
-  ]);
-  expect(store.events(runId).some((e) => e.taskId === 'schedule')).toBe(false);
-});
-
 test('run state and events are still there after a restart of the program', async () => {
   const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
   const first = testTuloy({ file });
