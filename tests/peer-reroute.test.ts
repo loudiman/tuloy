@@ -67,3 +67,71 @@ test('with the primary and the backup model down, the task goes to the same agen
   // The key is in no event.
   expect(JSON.stringify(store.events(runId))).not.toContain(KEY);
 });
+
+const scriptsEvents = ({ store }: Tuloy, runId: number) => store.events(runId).filter((e) => e.taskId === 'scripts');
+const stuckReason = ({ store }: Tuloy, runId: number) => taskViews(store.tasks(runId), store.events(runId)).find((t) => t.id === 'scripts')!.stuckReason;
+
+test.each<[string, A2aAnswer[], string, string, number]>([
+  ['refuses', [{ status: 'refused', text: 'I do not take this work.', ...ids }], 'peer_call peer_failed', 'Script task failed: Maria refused the task: I do not take this work. The re-route to a peer failed. The run ended as escalated.', 1],
+  [
+    'is over its limit for this Tuloy',
+    [{ status: 'refused', text: 'Lou is at the limit of 20 tasks per hour.', ...ids }],
+    'peer_call peer_failed',
+    'Script task failed: Maria refused the task: Lou is at the limit of 20 tasks per hour. The re-route to a peer failed. The run ended as escalated.',
+    1,
+  ],
+  [
+    'fails after it took the task',
+    [working, { status: 'failed', failure: 'agent-failed', text: 'The script agent did not finish the task: escalated.', ...ids }],
+    'peer_call peer_failed',
+    "Script task failed: Maria's script agent failed: The script agent did not finish the task: escalated. The re-route to a peer failed. The run ended as escalated.",
+    2,
+  ],
+  [
+    'cannot be reached',
+    [{ status: 'failed', failure: 'unreachable', text: 'The outside agent could not be reached.', taskId: null, contextId: null }],
+    'peer_call peer_failed',
+    "Script task failed: Maria's script agent failed: The outside agent could not be reached. The re-route to a peer failed. The run ended as escalated.",
+    1,
+  ],
+  [
+    'asks a question',
+    [{ status: 'ask', text: 'Which store?', ...ids }],
+    'peer_call peer_failed',
+    "Script task failed: Maria's script agent asked a question, and a run has nobody to answer it. The re-route to a peer failed. The run ended as escalated.",
+    2,
+  ],
+  ['gives a payload that does not match the schema', [working, result({ scripts: 'junk' })], 'validate invalid_output', 'Script task failed: its output did not match the schema. The re-route to a peer failed. The run ended as escalated.', 2],
+  ['gives a result that is not JSON', [{ status: 'result', text: 'Here are your scripts!', ...ids }], 'validate invalid_output', 'Script task failed: its output did not match the schema. The re-route to a peer failed. The run ended as escalated.', 1],
+])('a peer that %s makes the peer step fail fast, and the run ends as escalated', async (_name, answers, failure, reason, calls) => {
+  const tuloy = ownModelsDown({ peer: answers });
+  const { conductor, store, clock, peer } = tuloy;
+  const start = clock.now();
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(trail(tuloy, runId, 'scripts').slice(-4)).toEqual(["reroute Maria's script agent", 'dispatch started', failure, 'escalate escalated']);
+  expect(task(tuloy, runId, 'scripts')).toMatchObject({ status: 'escalated', output: null });
+  expect(stuckReason(tuloy, runId)).toBe(reason);
+  // Fast: one attempt, no retry, no second peer call after the answer.
+  expect(peer.calls).toHaveLength(calls);
+  expect(clock.now() - start).toBeLessThanOrEqual(5000);
+  // Nothing is passed on to the reviewer.
+  expect(store.events(runId).some((e) => e.taskId === 'review')).toBe(false);
+});
+
+test('with an empty allowed list the peer step is passed at once, with no call, and the run ends as escalated', async () => {
+  const tuloy = testTuloy({ script: { script: [down()] }, backupScript: { script: [down()] } });
+  const { conductor, store, peer } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(trail(tuloy, runId, 'scripts').slice(-4)).toEqual(['reroute backup model', 'dispatch started', 'model_call model_unavailable', 'escalate escalated']);
+  expect(scriptsEvents(tuloy, runId).at(-1)).toMatchObject({ action: 'escalate', cause: 'the backup model also failed' });
+  expect(stuckReason(tuloy, runId)).toBe('Script task failed: the model is not available (503 model down). The backup model also failed. The run ended as escalated.');
+  expect(peer.calls).toEqual([]);
+});

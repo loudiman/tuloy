@@ -26,8 +26,11 @@ export type RetryLimits = { retries: number; retryWaitMs: number };
 /** One step of the recovery order. It returns its action, or null when it does not apply and the order continues. */
 type Step = (failure: Failure, history: Failure[], limits: RetryLimits, work: Work) => Action | null;
 
-/** Whose work the task is. Work that came from a peer never uses steps 3 and 4. */
-export type Work = { forPeer: boolean };
+/**
+ * What the steps for peers need to know. Work that came from a peer never uses steps 3 and 4.
+ * `peers` is the number of peers on the allowed list: with none, steps 3 and 4 have nobody to ask, and the order continues.
+ */
+export type Work = { forPeer: boolean; peers: number };
 
 /** Step 1: retry the owner's own agent, with a longer wait each time, up to the limit. A known model outage skips this step. */
 const retryOwnAgent: Step = (failure, history, { retries, retryWaitMs }) => {
@@ -47,8 +50,8 @@ const rerouteToBackup: Step = (failure, history, { retries }) => {
  * Step 3: re-route to the same agent in a peer's Tuloy, one time. It applies when the backup model failed also.
  * A failure with `onPeer` is the result 'the peer step failed': ticket 10 puts step 4 (the full goal to a peer) after this step, for that result.
  */
-const rerouteToPeer: Step = (failure, history, _limits, { forPeer }) => {
-  if (forPeer || failure.onPeer || history.some((f) => f.onPeer)) return null;
+const rerouteToPeer: Step = (failure, history, _limits, { forPeer, peers }) => {
+  if (forPeer || peers === 0 || failure.onPeer || history.some((f) => f.onPeer)) return null;
   return { do: 'peer', cause: 'the backup model also failed' };
 };
 
@@ -62,7 +65,7 @@ const order: Step[] = [retryOwnAgent, rerouteToBackup, rerouteToPeer, escalate];
  * The recovery policy: (failure, the earlier failures of this task in this run, whose work it is) → next action.
  * Pure: no clock, no model, no store. It contains the recovery order and nothing else.
  */
-export function nextAction(failure: Failure, history: Failure[], limits: RetryLimits, work: Work = { forPeer: false }): Action {
+export function nextAction(failure: Failure, history: Failure[], limits: RetryLimits, work: Work = { forPeer: false, peers: 0 }): Action {
   for (const step of order) {
     const action = step(failure, history, limits, work);
     if (action) return action;

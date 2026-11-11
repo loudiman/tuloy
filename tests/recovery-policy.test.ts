@@ -6,7 +6,7 @@ const fail = (kind: Failure['kind'], retryAfterMs?: number): Failure => ({ kind,
 const onBackup = (kind: Failure['kind']): Failure => ({ kind, detail: 'x', onBackup: true });
 const backup = (cause: string) => ({ do: 'backup', cause });
 const retry = (retry: number, waitMs: number) => ({ do: 'retry', retry, of: 2, waitMs });
-const peer = { do: 'peer', cause: 'the backup model also failed' };
+const escalate = (cause: string) => ({ do: 'escalate', cause });
 
 // (failure, the earlier failures of this task) → next action
 test.each([
@@ -21,9 +21,9 @@ test.each([
   ['a rate limit also stops at the hard limit', fail('rate_limited', 7000), [fail('rate_limited'), fail('rate_limited')], backup('2 of 2 retries used')],
   ['a model outage skips the retries and goes to the backup model', fail('model_unavailable'), [], backup('primary outage')],
   ['an outage after a retry also goes to the backup model', fail('model_unavailable'), [fail('timeout')], backup('primary outage')],
-  ['an outage of the backup model also: backup failed, the task goes to a peer', onBackup('model_unavailable'), [fail('model_unavailable')], peer],
-  ['a failure on the backup model is not retried', onBackup('invalid_output'), [fail('model_unavailable')], peer],
-  ['the backup model is used one time', onBackup('timeout'), [fail('timeout'), fail('timeout'), fail('timeout')], peer],
+  ['an outage of the backup model also: backup failed, the run is escalated', onBackup('model_unavailable'), [fail('model_unavailable')], escalate('the backup model also failed')],
+  ['a failure on the backup model is not retried', onBackup('invalid_output'), [fail('model_unavailable')], escalate('the backup model also failed')],
+  ['the backup model is used one time', onBackup('timeout'), [fail('timeout'), fail('timeout'), fail('timeout')], escalate('the backup model also failed')],
 ] as const)('%s', (_name, failure, history, action) => {
   expect(nextAction(failure, [...history], limits)).toEqual(action);
 });

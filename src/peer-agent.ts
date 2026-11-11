@@ -34,6 +34,13 @@ export async function runPeerAgent(role: Role, input: unknown, peer: Peer, clien
       } catch {}
       return check(role, output);
     }
+    if (answer.status === 'refused') return fail('peer_failed', `${peer.name} refused the task: ${said(answer.text)}`);
+    if (answer.status === 'failed') return fail('peer_failed', `${who} failed: ${said(answer.text)}`);
+    if (answer.status === 'ask') {
+      // A run has no person in the loop, so a question ends the step. The peer is told to stop.
+      if (taskId) await client.cancel({ ...call, taskId });
+      return fail('peer_failed', `${who} asked a question, and a run has nobody to answer it`);
+    }
     if (!taskId) return fail('peer_failed', `${who} gave no task to read`);
     const now = clock.now();
     await clock.sleep(Math.min(limits.heartbeatMs, started + limits.taskTimeLimitMs - now));
