@@ -109,6 +109,20 @@ export function createConductor({
     }
   }
 
+  /**
+   * Stops a run that is not finished: the peer that asked for the work cancelled it. The run ends as escalated with `cause`.
+   * No model call starts for the run after this. ponytail: a model call that is in flight is not stopped; its answer is dropped.
+   */
+  function cancelRun(runId: number, cause: string) {
+    if (store.run(runId)?.status !== 'running') return;
+    for (const task of store.tasks(runId)) {
+      if (isWaiting(task.status) || task.status === 'done') continue;
+      store.append({ runId, taskId: task.id, action: 'escalate', cause, result: 'escalated' });
+      store.updateTask(runId, task.id, { status: 'escalated' });
+    }
+    endRun(runId, 'escalated', cause);
+  }
+
   function endRun(runId: number, status: 'done' | 'escalated', cause: string) {
     store.endRun(runId, status);
     store.append({ runId, action: 'end', cause, result: status });
@@ -193,7 +207,8 @@ export function createConductor({
       // An injected rejection of the script acts in the review of that script: the script agent hands it to the reviewer.
       if (injected === 'reviewer_rejection' && task.role === 'script') store.addInjection('reviewer', injected);
       // The time limit starts when the agent has its slot, not while it waits in line.
-      const heartbeat = (cause: string) => () => void store.append({ runId, taskId, action: 'heartbeat', cause, result: 'alive' });
+      // No heartbeat is written for a run that ended while the agent worked (a cancel).
+      const heartbeat = (cause: string) => () => void (store.run(runId)?.status === 'running' && store.append({ runId, taskId, action: 'heartbeat', cause, result: 'alive' }));
       let result: AgentResult = stopped
         ? { ok: false as const, failure: stopped }
         : peer || task.role === 'goal'
@@ -204,8 +219,15 @@ export function createConductor({
               injected,
               onHeartbeat: heartbeat(`${peer!.name}'s Tuloy answered: the task is in work`),
             })
-          : await withModelSlot(() => runAgent(task.role as Role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, outside, onHeartbeat: heartbeat('the agent waits for the model') }));
+          : await withModelSlot(async () =>
+              // The run can end while the agent waits in line (a cancel): then no model call starts.
+              store.run(runId)?.status !== 'running'
+                ? { ok: false as const, failure: { kind: 'timeout' as const, detail: 'the run ended' } }
+                : runAgent(task.role as Role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, outside, onHeartbeat: heartbeat('the agent waits for the model') }),
+            );
       stopped = null;
+      // The run ended while the agent worked (a cancel): its answer is dropped, and nothing more is written or started.
+      if (store.run(runId)?.status !== 'running') return 'escalated';
       // A review must name every script. A script with no review has no pass, so the review is a bad output of the reviewer.
       if (result.ok && task.role === 'reviewer') {
         const { reviews } = result.output as z.infer<typeof skills.reviewer.output>;
@@ -311,7 +333,7 @@ export function createConductor({
     return 'done';
   }
 
-  return { startRun, startPeerTask, startTask, continueRuns };
+  return { startRun, startPeerTask, startTask, continueRuns, cancelRun };
 }
 
 const isWaiting = (status: string) => status === 'queued' || status === 'waiting_on_dependency';

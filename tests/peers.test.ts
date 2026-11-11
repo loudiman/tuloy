@@ -2,10 +2,14 @@ import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { Message, type Task, TaskState } from '@a2a-js/sdk';
 import { ClientFactory } from '@a2a-js/sdk/client';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { SAMPLE_GOAL } from '../src/planner.ts';
+import { systemClock } from '../src/clock.ts';
+import { createConductor } from '../src/conductor.ts';
 import { createServer } from '../src/server.ts';
-import { goodOutput } from './harness/scripted-model.ts';
+import { defaultLimits } from '../src/settings.ts';
+import { openStore } from '../src/store.ts';
+import { goodOutput, scriptedModel } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
 const stops: (() => void)[] = [];
@@ -46,6 +50,8 @@ async function peerClient(url: string, key?: string) {
         },
         options,
       ) as Promise<Task>,
+    /** Tells the Tuloy to stop the task. */
+    cancel: (id: string) => client.cancelTask({ tenant: '', id, metadata: undefined }, options),
     /** Polls the task until it is not working. */
     async ended(id: string): Promise<Task> {
       for (;;) {
@@ -472,4 +478,41 @@ test('a full goal that a peer gives is outside text for every agent of the run; 
     expect(JSON.parse(own!)).not.toHaveProperty('goal');
   }
   expect(JSON.parse(sam.model.calls[1]!.prompt.split('\n')[0]!)).toEqual(goodOutput.trend_scout);
+});
+
+// ---- Review fix 10: the A2A cancel stops the run that this Tuloy does for the peer ----
+
+test.each([
+  ['a full goal', 'goal', { goal: SAMPLE_GOAL }, 'trend_scout', 'trends', 'Lou cancelled the goal'],
+  ['one task', 'script', scriptInput, 'script', 'scripts', 'Lou cancelled the task'],
+] as const)('a peer cancels %s: the run for it ends as escalated with that cause, and no further model call starts', async (_name, skill, input, role, taskId, cause) => {
+  const model = Promise.withResolvers<unknown>();
+  // Sam's Tuloy on the real clock: the test clock would jump over the time limit while the model call is open.
+  const store = openStore(':memory:', systemClock);
+  const sam = { store, model: scriptedModel({ [role]: [model.promise] }), backup: scriptedModel() };
+  const conductor = createConductor({ store, models: { primary: sam.model, backup: sam.backup }, clock: systemClock, limits: defaultLimits });
+  const server = createServer({ store, conductor, owner: 'Sam' });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  stops.push(() => (server.closeAllConnections(), server.close()));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  await allow(url, { name: 'Lou', address: 'https://lou.example', sendKey: 'key-from-sam', acceptKey: 'key-from-lou' });
+  const lou = await peerClient(url, 'key-from-lou');
+  const sent = await lou.send(skill, input);
+  await vi.waitFor(() => expect(sam.model.calls).toHaveLength(1));
+
+  const cancelled = await lou.cancel(sent.id);
+  model.resolve({ junk: 'a bad output: without the cancel, the conductor would retry' });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  expect(cancelled.status?.state).toBe(TaskState.TASK_STATE_CANCELED);
+  expect((await lou.ended(sent.id)).status?.state).toBe(TaskState.TASK_STATE_CANCELED);
+  const run = sam.store.runs()[0]!;
+  expect(run).toMatchObject({ forPeer: 'Lou', status: 'escalated' });
+  expect(sam.store.events(run.id).slice(-2).map((e) => [e.taskId, e.action, e.result, e.cause])).toEqual([
+    [taskId, 'escalate', 'escalated', cause],
+    [null, 'end', 'escalated', cause],
+  ]);
+  expect(sam.store.tasks(run.id)[0]).toMatchObject({ id: taskId, status: 'escalated', output: null });
+  expect(sam.model.calls).toHaveLength(1);
+  expect(sam.backup.calls).toHaveLength(0);
 });

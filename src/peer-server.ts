@@ -43,6 +43,10 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour, al
       securityRequirements: [{ schemes: { key: { list: [] } } }],
     });
 
+  /** The run of each A2A task that is in work, so that a cancel can stop it. `cancel` is what the cancel says in the event log. */
+  const inWork = new Map<string, { runId: number; contextId: string; cancel: string }>();
+  const cancelled = new Set<string>();
+
   /** The agent of one A2A task. The SDK keeps the A2A task; the work itself is a run of one task in the store. */
   const executor: AgentExecutor = {
     async execute(context, bus) {
@@ -75,13 +79,17 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour, al
       if (role === 'goal') {
         // A full goal starts a run, and the A2A task follows that run. The result is the scripts and the schedule of the run's tasks.
         const { runId, ended } = conductor.startRun(input.data.goal, peer);
+        inWork.set(ids.taskId, { runId, contextId: ids.contextId, cancel: `${peer} cancelled the goal` });
         await ended;
+        if (stopped(ids.taskId)) return;
         const run = skills.goal.output.safeParse(Object.assign({}, ...store.tasks(runId).map((t) => t.output)));
         if (store.run(runId)?.status !== 'done' || !run.success) return update('TASK_STATE_FAILED', `${owner}'s Tuloy did not finish the goal: the run ended as ${store.run(runId)?.status}.`);
         output = run.data;
       } else {
         const { runId, ended } = conductor.startPeerTask(peer, role, input.data);
+        inWork.set(ids.taskId, { runId, contextId: ids.contextId, cancel: `${peer} cancelled the task` });
         await ended;
+        if (stopped(ids.taskId)) return;
         const [task] = store.tasks(runId);
         if (task?.status !== 'done') return update('TASK_STATE_FAILED', `The ${role} agent did not finish the task: ${task?.status}.`);
         output = task.output;
@@ -97,9 +105,17 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour, al
       );
       update('TASK_STATE_COMPLETED');
     },
-    // ponytail: work for a peer is not stopped (a task is one model call; a goal runs to its end). Cancel answers with the task as it is.
-    async cancelTask() {},
+    // The peer that asked gave up (its time limit ended): the run for it stops, so that it spends no more model calls.
+    async cancelTask(taskId, bus) {
+      const work = inWork.get(taskId);
+      if (!work) return;
+      cancelled.add(taskId);
+      conductor.cancelRun(work.runId, work.cancel);
+      bus.publish(AgentEvent.statusUpdate({ taskId, contextId: work.contextId, status: Task.fromJSON({ status: { state: 'TASK_STATE_CANCELED' } }).status, metadata: undefined }));
+    },
   };
+  /** True when the A2A task was cancelled: it has its last state already. Either way the task is not in work now. */
+  const stopped = (taskId: string) => (inWork.delete(taskId), cancelled.delete(taskId));
 
   const allowedList = createAllowedList({ store, owner, peerTasksPerHour, allowLocal });
   let a2a: { card: AgentCard; transport: JsonRpcTransportHandler } | undefined;
