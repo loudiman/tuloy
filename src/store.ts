@@ -178,6 +178,10 @@ export function openStore(file: string, clock: { now(): number }) {
       const row = db.prepare(`DELETE FROM injections WHERE id = (SELECT MIN(id) FROM injections WHERE task = ? AND kind ${forPeerStep ? '' : 'NOT'} LIKE 'peer%') RETURNING kind`).get(task);
       return row?.kind as string | undefined;
     },
+    /** Removes every pending injection. */
+    clearInjections() {
+      db.exec('DELETE FROM injections');
+    },
     /** Calls `listener` for each new event. Returns the function that stops it. */
     subscribe(listener: (event: TuloyEvent) => void): () => void {
       listeners.add(listener);

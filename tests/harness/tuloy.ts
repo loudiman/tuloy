@@ -48,13 +48,14 @@ export function fakeClock(start = Date.parse('2026-11-12T09:00:00+08:00')): Cloc
  * its own copy of `script`: a model failure in a test is a failure of both models. `backupScript: {}` is a backup model with no failure.
  * `peer` is the scripted fake peer client: it plays the answers of `options.peer` in order and repeats the last; `peer.calls` holds each move.
  * `peerClient` puts another client in its place (the real one, for a test with two real Tuloys).
+ * Demo mode is on (injections act) unless `demo` is false.
  */
-export function testTuloy(options: { script?: Partial<Record<Role, Step[]>>; backupScript?: Partial<Record<Role, Step[]>>; file?: string; limits?: Partial<Limits>; peer?: A2aAnswer[]; peerClient?: A2aClient } = {}) {
+export function testTuloy(options: { script?: Partial<Record<Role, Step[]>>; backupScript?: Partial<Record<Role, Step[]>>; file?: string; limits?: Partial<Limits>; peer?: A2aAnswer[]; peerClient?: A2aClient; demo?: boolean } = {}) {
   const clock = fakeClock();
   const store = openStore(options.file ?? ':memory:', clock);
   const model = scriptedModel(options.script, clock);
   const backup = scriptedModel(options.backupScript ?? options.script, clock);
   const peer = fakeA2a(options.peer ?? [{ status: 'failed', failure: 'unreachable', text: 'The outside agent could not be reached.', taskId: null, contextId: null }]);
-  const conductor = createConductor({ store, models: { primary: model, backup }, clock, limits: { ...defaultLimits, ...options.limits }, peerClient: options.peerClient ?? peer });
+  const conductor = createConductor({ store, models: { primary: model, backup }, clock, limits: { ...defaultLimits, ...options.limits }, peerClient: options.peerClient ?? peer, demo: options.demo ?? true });
   return { clock, store, model, backup, peer, conductor };
 }

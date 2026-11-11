@@ -24,7 +24,7 @@ function start(owner: string, port: string) {
     return answer(options);
   };
   const store = openStore(':memory:', systemClock);
-  const conductor = createConductor({ store, models: { primary: model, backup: model }, clock: systemClock, limits: defaultLimits, peerClient: createPeerClient({ allowLocal: true }) });
+  const conductor = createConductor({ store, models: { primary: model, backup: model }, clock: systemClock, limits: defaultLimits, peerClient: createPeerClient({ allowLocal: true }), demo: true });
   createServer({ store, conductor, owner, demo: true }).listen(Number(port), '127.0.0.1', () => console.log(`Tuloy of ${owner}, scripted model: http://localhost:${port}`));
 }
 

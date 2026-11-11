@@ -392,6 +392,7 @@ async function readPending() {
   if (!response?.ok) return void (pendingWorks = false);
   const body: unknown = await response.json().catch(() => undefined);
   const pending = Array.isArray(body) ? body : ((body as { injections?: unknown })?.injections ?? []);
+  $('demo-clear').hidden = !(Array.isArray(pending) && pending.length);
   $('demo-pending').replaceChildren(
     ...(Array.isArray(pending) ? pending : []).map((p: { kind?: string; task?: string }) =>
       h('li', {}, `Waiting: ${String(p.kind ?? 'injection').replaceAll('_', ' ')} at ${String(p.task ?? 'a task').replaceAll('_', ' ')}`),
@@ -414,6 +415,12 @@ async function inject(kind: string, label: string) {
 }
 
 function setUpDemo() {
+  $('demo-clear').addEventListener('click', async () => {
+    const response = await fetch('/api/injections', { method: 'DELETE' }).catch(() => undefined);
+    $('demo-note').className = 'demo-note';
+    $('demo-note').textContent = response?.ok ? 'No injection waits now.' : 'The waiting injections were not cleared.';
+    void readPending();
+  });
   $('demo-task').replaceChildren(...roles.map((role) => h('option', { value: role, ...(role === 'script' ? { selected: '' } : {}) }, role.replaceAll('_', ' '))));
   $('demo-kinds').replaceChildren(
     ...kinds.map(([kind, label]) => {

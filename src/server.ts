@@ -67,6 +67,8 @@ export function createServer({ store, conductor, owner, peerTasksPerHour = 20, d
     }
     // Injection exists only in demo mode. `task` is an agent role; the default is the script task.
     if (demo && req.method === 'GET' && path === '/api/injections') return json(200, { demo: true, injections: store.injections() });
+    // The owner clears the pending injections, so that none stays for a later run.
+    if (demo && req.method === 'DELETE' && path === '/api/injections') return (store.clearInjections(), res.writeHead(204).end());
     if (demo && req.method === 'POST' && path === '/api/injections') {
       let body = '';
       for await (const chunk of req) body += chunk;

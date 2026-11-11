@@ -23,6 +23,7 @@ export function createConductor({
   clock,
   limits,
   peerClient = createPeerClient(),
+  demo = false,
 }: {
   store: Store;
   models: { primary: LanguageModel; backup: LanguageModel };
@@ -30,6 +31,8 @@ export function createConductor({
   limits: Limits;
   /** Sends a task to a peer (step 3 of the recovery order). The default refuses private and same-machine addresses. */
   peerClient?: A2aClient;
+  /** Demo mode. Outside demo mode no injection acts, also not one that an earlier start in demo mode left in the data file. */
+  demo?: boolean;
 }) {
   // At most `limits.maxModelCalls` agents run at the same time, over all runs of this Tuloy. The others wait in line.
   let freeSlots = limits.maxModelCalls;
@@ -178,7 +181,8 @@ export function createConductor({
       if (!stopped) store.append({ runId, taskId, action: 'dispatch', cause: why, result: 'started' });
       // Demo mode: a pending injection for this agent is used now, one time. Injections act on the primary model;
       // only an outage of all own models goes with the task to the backup model. The kinds for a peer act on the peer step.
-      const injected = stopped ? undefined : model === 'backup' ? allDown : store.takeInjection(task.role, model === 'peer');
+      // An injection acts only on the owner's own runs: a run for a peer never takes one.
+      const injected = stopped || !demo || run.forPeer !== null ? undefined : model === 'backup' ? allDown : store.takeInjection(task.role, model === 'peer');
       if (injected === 'all_models_outage') allDown = injected;
       if (injected && model !== 'backup') store.append({ runId, taskId, action: 'injection', cause: 'demo: the presenter injected this failure', result: injected });
       // An injected rejection of the script acts in the review of that script: the script agent hands it to the reviewer.

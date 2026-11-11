@@ -299,6 +299,7 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
 .demo-note { margin-top: 0.7rem; padding: 0.4rem 0.6rem; background: var(--sheet); border-left: 5px solid var(--go); font-weight: 600; }
 .demo-note.is-refused { border-left-color: var(--soft); color: var(--soft); }
 .demo-pending { margin-top: 0.6rem; font: 500 0.78rem var(--mono); letter-spacing: -0.02em; }
+#demo-clear { margin-top: 0.6rem; font-size: 0.9rem; font-weight: 600; padding: 0.4rem 0.7rem; }
 
 /* ---- narrower windows ---- */
 @media (max-width: 1150px) {

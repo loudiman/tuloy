@@ -31,7 +31,7 @@ model.doGenerate = async (options) => {
 };
 
 const store = openStore(':memory:', systemClock);
-const conductor = createConductor({ store, models: { primary: model, backup: model }, clock: systemClock, limits: defaultLimits });
+const conductor = createConductor({ store, models: { primary: model, backup: model }, clock: systemClock, limits: defaultLimits, demo: true });
 createServer({ store, conductor, owner: 'Lou (scripted model, no real agent)', demo: true }).listen(port, '127.0.0.1', () => {
   console.log(`Tuloy with the scripted model: http://localhost:${port}`);
 });
