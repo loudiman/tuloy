@@ -1,6 +1,7 @@
 import { APICallError } from 'ai';
 import { expect, test } from 'vitest';
 import { SAMPLE_GOAL } from '../src/planner.ts';
+import { taskViews } from '../src/task-view.ts';
 import { goodOutput, hang, slow } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
@@ -204,4 +205,52 @@ test('a model error is model_unavailable, and its text is stored without the add
     cause: 'This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 2787. To increase, visit [address removed] and add credits',
   });
   expect(JSON.stringify(tuloy.store.events(runId))).not.toContain('key-id-123');
+});
+
+test('a stalled or recovering task has a stuck reason made from its events, and a shown status in plain words', async () => {
+  const tuloy = testTuloy();
+  const { conductor, store } = tuloy;
+  for (let i = 0; i < 3; i++) store.addInjection('script', 'timeout');
+  const seen: unknown[] = [];
+  const scripts = (runId: number) => {
+    const { shownStatus, stuckReason } = taskViews(store.tasks(runId), store.events(runId)).find((t) => t.id === 'scripts')!;
+    return [shownStatus, stuckReason];
+  };
+  store.subscribe((e) => e.taskId === 'scripts' && ['dispatch', 'retry'].includes(e.action) && seen.push(scripts(e.runId)));
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(seen).toEqual([
+    ['running', null],
+    ['stalled', 'Script task stalled: no heartbeat for 20s. Retry 1 of 2 in 2s.'],
+    ['recovering', 'Script task stalled: no heartbeat for 20s. Retry 1 of 2 is running.'],
+    ['stalled', 'Script task stalled: no heartbeat for 20s. Retry 2 of 2 in 4s.'],
+    ['recovering', 'Script task stalled: no heartbeat for 20s. Retry 2 of 2 is running.'],
+  ]);
+  expect(taskViews(store.tasks(runId), store.events(runId)).map((t) => [t.id, t.shownStatus, t.stuckReason])).toEqual([
+    ['trends', 'done', null],
+    ['scripts', 'escalated', 'Script task stalled: no heartbeat for 20s. 2 of 2 retries used. The run ended as escalated.'],
+    ['review', 'waiting on dependency', null],
+    ['schedule', 'waiting on dependency', null],
+  ]);
+});
+
+test.each([
+  ['a bad output', { script: [{ scripts: 'junk' }] }, 'Script task failed: its output did not match the schema. Retry 1 of 2 in 2s.'],
+  ['no answer', { script: [hang] }, 'Script task stalled: no answer in 60s. Retry 1 of 2 in 2s.'],
+  ['a rate limit', { script: [new APICallError({ message: 'Too many requests', url: 'https://model.test', requestBodyValues: {}, statusCode: 429 })] }, 'Script task failed: the model is rate-limited. Retry 1 of 2 in 2s.'],
+  [
+    'a model with no credits',
+    { trend_scout: [new Error('This request requires more credits. Visit https://openrouter.ai/settings/keys/key-id-123.')] },
+    'Trend scout task failed: the model is not available (This request requires more credits. Visit [address removed]). A model outage is not retried. The run ended as escalated.',
+  ],
+])('the stuck reason after %s says the cause and what Tuloy did', async (_name, script, reason) => {
+  const { conductor, store } = testTuloy({ script });
+  const reasons: (string | null)[] = [];
+  store.subscribe((e) => ['retry', 'escalate'].includes(e.action) && reasons.push(taskViews(store.tasks(e.runId), store.events(e.runId)).find((t) => t.id === e.taskId)!.stuckReason));
+
+  await conductor.startRun(SAMPLE_GOAL).ended;
+
+  expect(reasons).toEqual([reason]);
 });
