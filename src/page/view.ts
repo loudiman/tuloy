@@ -101,6 +101,7 @@ export function timelineOf(events: EventView[], taskId: string | null) {
     .filter((e) => taskId === null || e.taskId === taskId)
     .map((e) => ({
       seq: e.seq,
+      taskId: e.taskId,
       time: clockFormat.format(e.time),
       title: titles[e.action] ?? words(e.action).replace(/^./, (c) => c.toUpperCase()),
       result: words(e.result),

@@ -78,15 +78,15 @@ test('the timeline of a task has its events in order, each with a time in Manila
   ];
 
   expect(timelineOf(events, 'scripts')).toEqual([
-    { seq: 2, time: '09:00:02', title: 'Handoff', result: 'accepted', cause: 'The checked output of trends is the input.', kind: 'handoff', data: { from: 'trends', content: { goal: 'A goal' } } },
-    { seq: 4, time: '09:00:04', title: 'Output check', result: 'invalid output', cause: 'The output did not match the schema.', kind: 'trouble', data: null },
+    { seq: 2, taskId: 'scripts', time: '09:00:02', title: 'Handoff', result: 'accepted', cause: 'The checked output of trends is the input.', kind: 'handoff', data: { from: 'trends', content: { goal: 'A goal' } } },
+    { seq: 4, taskId: 'scripts', time: '09:00:04', title: 'Output check', result: 'invalid output', cause: 'The output did not match the schema.', kind: 'trouble', data: null },
   ]);
 });
 
 test('an event action that the page does not know is a plain timeline row: action, result, cause, time', () => {
   const rows = timelineOf([event(7, 'scripts', 'goal_to_peer', 'sent', 'Own models and the peer agent failed.')], 'scripts');
 
-  expect(rows).toEqual([{ seq: 7, time: '09:00:07', title: 'Goal to peer', result: 'sent', cause: 'Own models and the peer agent failed.', kind: 'recovery', data: null }]);
+  expect(rows).toEqual([{ seq: 7, taskId: 'scripts', time: '09:00:07', title: 'Goal to peer', result: 'sent', cause: 'Own models and the peer agent failed.', kind: 'recovery', data: null }]);
 });
 
 test('retries and re-routes are marked as recovery actions; the whole run shows every event', () => {
