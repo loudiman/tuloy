@@ -16,7 +16,17 @@ export type TaskStatus =
   | 'done'
   | 'escalated';
 
-export type Run = { id: number; goal: string; status: RunStatus; startedAt: number; endedAt: number | null };
+export type Run = {
+  id: number;
+  goal: string;
+  status: RunStatus;
+  startedAt: number;
+  endedAt: number | null;
+  /** The name of the peer that this run works for. Null for the owner's own runs. */
+  forPeer: string | null;
+};
+/** One entry of the allowed list. `sendKey` goes out with work for the peer; `acceptKey` is the key this Tuloy accepts from the peer. */
+export type Peer = { name: string; address: string; sendKey: string; acceptKey: string };
 export type Task = {
   id: string;
   title: string;
@@ -27,6 +37,8 @@ export type Task = {
   agent: string | null;
   /** The checked output. Null until the task is done. */
   output: unknown;
+  /** The input that a peer gave for this task. Null for a task that gets its input from a handoff. */
+  input: unknown;
 };
 /** One line of the event log. `data` holds the content of the event, for example a handoff's checked fields. */
 export type TuloyEvent = {
@@ -58,10 +70,17 @@ export function openStore(file: string, clock: { now(): number }) {
     CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL, run_id INTEGER NOT NULL, task_id TEXT,
       cause TEXT NOT NULL, action TEXT NOT NULL, result TEXT NOT NULL, data TEXT);
     CREATE TABLE IF NOT EXISTS injections (id INTEGER PRIMARY KEY AUTOINCREMENT, task TEXT NOT NULL, kind TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS peers (name TEXT PRIMARY KEY, address TEXT NOT NULL, send_key TEXT NOT NULL, accept_key TEXT NOT NULL);
   `);
+  // A data file from before the peer server has no such columns.
+  for (const column of ['runs ADD COLUMN for_peer TEXT', 'tasks ADD COLUMN input TEXT']) {
+    try {
+      db.exec(`ALTER TABLE ${column}`);
+    } catch {}
+  }
   const listeners = new Set<(event: TuloyEvent) => void>();
 
-  const toRun = (r: Row): Run => ({ id: r.id, goal: r.goal, status: r.status, startedAt: r.started_at, endedAt: r.ended_at });
+  const toRun = (r: Row): Run => ({ id: r.id, goal: r.goal, status: r.status, startedAt: r.started_at, endedAt: r.ended_at, forPeer: r.for_peer });
   const toTask = (r: Row): Task => ({
     id: r.id,
     title: r.title,
@@ -70,6 +89,7 @@ export function openStore(file: string, clock: { now(): number }) {
     status: r.status,
     agent: r.agent,
     output: r.output === null ? null : JSON.parse(r.output),
+    input: r.input === null ? null : JSON.parse(r.input),
   });
   const toEvent = (r: Row): TuloyEvent => ({
     seq: r.seq,
@@ -84,10 +104,12 @@ export function openStore(file: string, clock: { now(): number }) {
 
   return {
     /** Stores a run and its task graph. A task with no dependency is queued; the others wait. */
-    createRun(goal: string, tasks: PlannedTask[]): number {
-      const runId = Number(db.prepare('INSERT INTO runs (goal, status, started_at) VALUES (?, ?, ?)').run(goal, 'running', clock.now()).lastInsertRowid);
-      const insert = db.prepare('INSERT INTO tasks (run_id, position, id, title, depends_on, role, status) VALUES (?, ?, ?, ?, ?, ?, ?)');
-      tasks.forEach((t, i) => insert.run(runId, i, t.id, t.title, JSON.stringify(t.dependsOn), t.role, t.dependsOn.length ? 'waiting_on_dependency' : 'queued'));
+    createRun(goal: string, tasks: PlannedTask[], forPeer: string | null = null): number {
+      const runId = Number(db.prepare('INSERT INTO runs (goal, status, started_at, for_peer) VALUES (?, ?, ?, ?)').run(goal, 'running', clock.now(), forPeer).lastInsertRowid);
+      const insert = db.prepare('INSERT INTO tasks (run_id, position, id, title, depends_on, role, status, input) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+      tasks.forEach((t, i) =>
+        insert.run(runId, i, t.id, t.title, JSON.stringify(t.dependsOn), t.role, t.dependsOn.length ? 'waiting_on_dependency' : 'queued', t.input === undefined ? null : JSON.stringify(t.input)),
+      );
       return runId;
     },
     run(runId: number): Run | undefined {
@@ -141,6 +163,18 @@ export function openStore(file: string, clock: { now(): number }) {
     subscribe(listener: (event: TuloyEvent) => void): () => void {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    /** Puts a peer on the allowed list. A peer with the same name is replaced. */
+    addPeer(peer: Peer) {
+      db.prepare('INSERT OR REPLACE INTO peers (name, address, send_key, accept_key) VALUES (?, ?, ?, ?)').run(peer.name, peer.address, peer.sendKey, peer.acceptKey);
+    },
+    /** The allowed list. */
+    peers(): Peer[] {
+      return db.prepare('SELECT * FROM peers ORDER BY name').all().map((r: Row) => ({ name: r.name, address: r.address, sendKey: r.send_key, acceptKey: r.accept_key }));
+    },
+    /** How many runs this Tuloy started for the peer in the last hour. */
+    peerRunsInLastHour(name: string): number {
+      return Number(db.prepare('SELECT COUNT(*) AS n FROM runs WHERE for_peer = ? AND started_at > ?').get(name, clock.now() - 60 * 60 * 1000)!.n);
     },
     close() {
       db.close();

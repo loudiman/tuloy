@@ -4,7 +4,7 @@ import { runAgent } from './agent-runner.ts';
 import type { Clock } from './clock.ts';
 import { planTaskGraph } from './planner.ts';
 import { nextAction, type Failure } from './recovery-policy.ts';
-import { roles } from './schemas.ts';
+import { roles, type Role } from './schemas.ts';
 import type { Limits } from './settings.ts';
 import type { Store, TaskStatus } from './store.ts';
 
@@ -36,6 +36,17 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     const tasks = planTaskGraph(goal);
     const runId = store.createRun(goal, tasks);
     store.append({ runId, action: 'plan', cause: 'the owner gave a goal', result: `task graph stored: ${tasks.length} tasks` });
+    return { runId, ended: drive(runId) };
+  }
+
+  /**
+   * Starts a run of one task for a peer: that agent runs once, on the input that the peer gave.
+   * The caller checks the input against the role's input schema first. Read the result from the task row when `ended` resolves.
+   */
+  function startPeerTask(peer: string, role: Role, input: { goal: string }): { runId: number; ended: Promise<void> } {
+    const task = { ...planTaskGraph(input.goal).find((t) => t.role === role)!, dependsOn: [], input };
+    const runId = store.createRun(input.goal, [task], peer);
+    store.append({ runId, taskId: task.id, action: 'peer_task', cause: `${peer} sent a task for the ${role} agent`, result: `accepted for ${peer}`, data: { peer, input } });
     return { runId, ended: drive(runId) };
   }
 
@@ -79,7 +90,7 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     store.append({ runId, taskId, action: 'assign', cause: 'the task is ready', result: agent, data: { model: 'primary' } });
 
     // The next agent gets only the checked fields of its role's input schema.
-    const input = roles[task.role].input.parse(Object.assign({ goal: run.goal }, ...deps.map((d) => d.output)));
+    const input = roles[task.role].input.parse(Object.assign({ goal: run.goal }, task.input, ...deps.map((d) => d.output)));
     if (deps.length) {
       store.append({ runId, taskId, action: 'handoff', cause: `${deps.map((d) => d.id).join(', ')} done`, result: 'checked content stored', data: { from: deps.map((d) => d.id), content: input } });
     }
@@ -140,7 +151,7 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     return 'done';
   }
 
-  return { startRun, startTask };
+  return { startRun, startPeerTask, startTask };
 }
 
 const isWaiting = (status: string) => status === 'queued' || status === 'waiting_on_dependency';

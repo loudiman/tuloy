@@ -3,7 +3,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import type { Clock } from '../../src/clock.ts';
 import type { Role } from '../../src/schemas.ts';
 
-/** One scripted answer: a value is returned as the model's JSON; an Error is thrown as the model's failure. */
+/** One scripted answer: a value (or a promise of one) is returned as the model's JSON; an Error is thrown as the model's failure. */
 export type Step = unknown;
 
 /** A step that never answers: the model call stays open until the agent runner stops it. */
@@ -40,7 +40,8 @@ export function scriptedModel(script: Partial<Record<Role, Step[]>> = {}, clock?
         .join('\n');
       calls.push({ role, prompt, maxOutputTokens: options.maxOutputTokens });
       const steps = left[role];
-      let step = steps?.length ? steps.shift() : goodOutput[role];
+      // A step may be a promise: the model then answers when the test resolves it.
+      let step = await (steps?.length ? steps.shift() : goodOutput[role]);
       if (typeof step === 'object' && step !== null && hang in step) {
         most.atTheSameTime = Math.max(most.atTheSameTime, ++open);
         await clock!.sleep(step[hang] as number);
