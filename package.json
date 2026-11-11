@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource-variable/archivo": "^5.3.0",
+    "@fontsource-variable/martian-mono": "^5.3.0",
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "ai": "^7.0.166",
     "zod": "^4.6.7"
