@@ -5,6 +5,9 @@ import type { Role } from '../../src/schemas.ts';
 /** One scripted answer: a value is returned as the model's JSON; an Error is thrown as the model's failure. */
 export type Step = unknown;
 
+/** A step that never answers: the model call stays open until the agent runner stops it. */
+export const hang = Symbol('hang');
+
 /**
  * The scripted model never calls a real model. It reads the agent role from the first line of the
  * system prompt ("ROLE: script") and answers with a good fixed output for that role.
@@ -32,6 +35,7 @@ export function scriptedModel(script: Partial<Record<Role, Step[]>> = {}) {
       const steps = left[role];
       const step = steps?.length ? steps.shift() : goodOutput[role];
       if (step instanceof Error) throw step;
+      if (step === hang) await new Promise((_, reject) => options.abortSignal?.addEventListener('abort', () => reject(new Error('stopped'))));
       return {
         content: [{ type: 'text', text: JSON.stringify(step) }],
         finishReason: { unified: 'stop', raw: undefined },

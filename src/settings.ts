@@ -12,6 +12,12 @@ export function readSettings(env: Record<string, string | undefined>) {
       retries: Number(env.TULOY_RETRIES || 2),
       /** The wait before the first retry. Each next wait is two times longer. */
       retryWaitMs: Number(env.TULOY_RETRY_WAIT_MS || 2000),
+      /** The time limit of one attempt of a task. */
+      taskTimeLimitMs: Number(env.TULOY_TASK_TIME_LIMIT_MS || 60_000),
+      /** A running agent sends a heartbeat this often. */
+      heartbeatMs: Number(env.TULOY_HEARTBEAT_MS || 5000),
+      /** With no heartbeat for this long, the agent is stalled. */
+      heartbeatMissedMs: Number(env.TULOY_HEARTBEAT_MISSED_MS || 20_000),
     },
   };
 }

@@ -73,13 +73,17 @@ export function createConductor({ store, models, clock, limits }: { store: Store
     let output: unknown;
     for (;;) {
       store.append({ runId, taskId, action: 'dispatch', cause: history.length ? `retry ${history.length} of ${limits.retries}` : 'the tasks it depends on are done', result: 'started' });
-      const result = await runAgent(task.role, input, models.primary);
+      const result = await runAgent(task.role, input, models.primary, {
+        clock,
+        limits,
+        onHeartbeat: () => store.append({ runId, taskId, action: 'heartbeat', cause: 'the agent waits for the model', result: 'alive' }),
+      });
       if (result.ok) {
         output = result.output;
         break;
       }
       const { failure } = result;
-      store.append({ runId, taskId, action: failure.kind === 'invalid_output' ? 'validate' : 'model_call', cause: failure.detail, result: failure.kind });
+      store.append({ runId, taskId, action: failureAction[failure.kind], cause: failure.detail, result: failure.kind });
       store.updateTask(runId, taskId, { status: failedStatus[failure.kind] });
 
       const action = nextAction(failure, history, limits);
@@ -126,4 +130,13 @@ const failedStatus: Record<Failure['kind'], TaskStatus> = {
   invalid_output: 'failed_validation',
   model_unavailable: 'model_unavailable',
   rate_limited: 'model_unavailable',
+};
+
+/** The event action that finds each failure. */
+const failureAction: Record<Failure['kind'], string> = {
+  timeout: 'watch',
+  missed_heartbeat: 'watch',
+  invalid_output: 'validate',
+  model_unavailable: 'model_call',
+  rate_limited: 'model_call',
 };

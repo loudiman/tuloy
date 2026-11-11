@@ -1,7 +1,9 @@
 import { generateText, NoObjectGeneratedError, NoOutputGeneratedError, Output, type LanguageModel } from 'ai';
 import type { z } from 'zod';
+import type { Clock } from './clock.ts';
 import type { Failure } from './recovery-policy.ts';
 import { roles, type Role } from './schemas.ts';
+import type { Limits } from './settings.ts';
 
 /** The first line of the system prompt is "ROLE: <role>"; the scripted test model reads it. */
 const prompts: Record<Role, string> = {
@@ -16,8 +18,42 @@ const prompts: Record<Role, string> = {
 
 export type AgentResult = { ok: true; output: unknown } | { ok: false; failure: Failure };
 
-/** Role + checked input → checked output or a typed failure. It never throws. */
-export async function runAgent(role: Role, input: unknown, model: LanguageModel): Promise<AgentResult> {
+export type RunOptions = {
+  clock: Clock;
+  limits: Pick<Limits, 'taskTimeLimitMs' | 'heartbeatMs' | 'heartbeatMissedMs'>;
+  /** Called for each heartbeat that the agent sends while it waits for the model. */
+  onHeartbeat?: () => void;
+};
+
+/**
+ * Role + checked input → checked output or a typed failure. It never throws.
+ * While the agent waits for the model it sends a heartbeat every `heartbeatMs`. The attempt ends as `timeout` when
+ * there is no answer in `taskTimeLimitMs`, and as `missed_heartbeat` when no heartbeat came for `heartbeatMissedMs`.
+ */
+export async function runAgent(role: Role, input: unknown, model: LanguageModel, { clock, limits, onHeartbeat }: RunOptions): Promise<AgentResult> {
+  const stop = new AbortController();
+  const seconds = (ms: number) => `${Math.round(ms / 1000)}s`;
+
+  async function watch(): Promise<AgentResult> {
+    const started = clock.now();
+    let lastBeat = started;
+    for (;;) {
+      await clock.sleep(Math.min(started + limits.taskTimeLimitMs, lastBeat + limits.heartbeatMs) - clock.now(), stop.signal);
+      const now = clock.now();
+      if (stop.signal.aborted || now - started >= limits.taskTimeLimitMs) return { ok: false, failure: { kind: 'timeout', detail: `no answer in ${seconds(now - started)}` } };
+      lastBeat = now;
+      onHeartbeat?.();
+    }
+  }
+
+  try {
+    return await Promise.race([callModel(role, input, model, stop.signal), watch()]);
+  } finally {
+    stop.abort(); // stops the model call, or the watch, that lost
+  }
+}
+
+async function callModel(role: Role, input: unknown, model: LanguageModel, abortSignal: AbortSignal): Promise<AgentResult> {
   const schema: z.ZodType = roles[role].output;
   try {
     const result = await generateText({
@@ -26,6 +62,7 @@ export async function runAgent(role: Role, input: unknown, model: LanguageModel)
       prompt: JSON.stringify(input),
       output: Output.object({ schema }),
       maxRetries: 0, // the conductor owns retries
+      abortSignal,
     });
     // Tuloy checks every output with its own schema in any case. The parse also drops fields that are not in the schema.
     const checked = schema.safeParse(result.output);
