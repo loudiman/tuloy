@@ -247,7 +247,7 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
     [1.6, -0.55, 0.62, 0.06, 0.25, 0.2, 'sign'], [1.6, 0.3, 0.62, 0.06, 0.25, 0.2, 'sign'], [1.6, -0.7, 0.3, 0.1, 1.4, 0.14, 'ink'],
   ];
   for (const [x, y, z, w, d, h, colour] of JEEP) box(jeep, x, y, z, w, d, h, colour);
-  const cargo = panel(2.8, 0.7, 'panel', 'ink');
+  const cargo = panel(2.8, 0.7, 'white', 'ink');
   const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: cargo.texture, depthTest: false }));
   tag.scale.set(2.8, 0.7, 1);
   tag.position.set(0, 2.9, 0);

@@ -7,6 +7,7 @@
 <link rel="preload" href="/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/martian-mono.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/page/style.css">
+<script src="/page/theme.ts"></script>
 <script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/controls/OrbitControls.js":"/vendor/OrbitControls.js"}}</script>
 <script type="module" src="/page/app.ts"></script>
 </head>
@@ -14,6 +15,7 @@
 <header class="bar">
   <p class="mark">Tuloy <span id="owner" class="owner"></span> <span id="demo-tag" class="tag tag-demo" hidden>Demo mode</span></p>
   <label class="pick">Run <select id="run-pick"></select></label>
+  <button id="theme" class="theme" type="button">Dark theme</button>
   <nav class="nav" aria-label="Screens"><a href="/" aria-current="page">Runs</a><a href="/peers">Peers</a></nav>
 </header>
 

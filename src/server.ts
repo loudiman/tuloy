@@ -22,6 +22,7 @@ const pageFiles: Record<string, { file: URL; type: string }> = {
   '/page/style.css': { file: file('./page/style.css'), type: 'text/css; charset=utf-8' },
   '/page/app.ts': { file: file('./page/app.ts'), type: 'text/javascript; charset=utf-8' },
   '/page/view.ts': { file: file('./page/view.ts'), type: 'text/javascript; charset=utf-8' },
+  '/page/theme.ts': { file: file('./page/theme.ts'), type: 'text/javascript; charset=utf-8' },
   '/page/street.ts': { file: file('./page/street.ts'), type: 'text/javascript; charset=utf-8' },
   // The 3D library comes from the repo's own packages, so the page needs no internet.
   '/vendor/three.module.js': { file: file('../node_modules/three/build/three.module.js'), type: 'text/javascript; charset=utf-8' },

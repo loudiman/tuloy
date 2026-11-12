@@ -81,7 +81,7 @@ h2, h3 { font-size: 0.95rem; color: var(--soft); margin-bottom: 0.7rem; }
 .status-running { color: var(--live); }
 .status-done { color: var(--go); }
 .status-stalled, .status-recovering { color: var(--ink); background: var(--warn-fill); padding: 0.05em 0.5em; border-radius: 3px; }
-.status-escalated { color: #fff; background: var(--stop); padding: 0.05em 0.5em; border-radius: 3px; }
+.status-escalated { color: var(--on-stop); background: var(--stop); padding: 0.05em 0.5em; border-radius: 3px; }
 @media (prefers-reduced-motion: no-preference) {
   .status-running .glyph { animation: beat 1.4s ease-in-out infinite; }
   .status-recovering .glyph { animation: turn 2.4s linear infinite; }
@@ -95,7 +95,7 @@ h2, h3 { font-size: 0.95rem; color: var(--soft); margin-bottom: 0.7rem; }
   margin-top: 0.5rem;
   padding: 0.4rem 0.7rem;
   border-left: 5px solid var(--warn);
-  background: #fff1c9;
+  background: var(--note);
   color: var(--ink);
   font-size: 1rem;
   font-weight: 500;
@@ -131,7 +131,7 @@ h2, h3 { font-size: 0.95rem; color: var(--soft); margin-bottom: 0.7rem; }
 }
 .goal-form { display: flex; flex: 1 1 26rem; align-items: center; gap: 0.6rem; }
 .goal-form label { font-size: 0.8rem; font-weight: 700; font-stretch: 75%; text-transform: uppercase; letter-spacing: 0.07em; color: var(--soft); white-space: nowrap; }
-input, select { font: 500 1rem var(--text); color: var(--ink); background: #fff; border: 2px solid var(--ink); border-radius: 4px; padding: 0.5rem 0.7rem; }
+input, select { font: 500 1rem var(--text); color: var(--ink); background: var(--sheet); border: 2px solid var(--ink); border-radius: 4px; padding: 0.5rem 0.7rem; }
 .goal-form input { flex: 1; min-width: 0; }
 .sample { display: flex; flex: 0 1 auto; align-items: center; gap: 0.6rem 1rem; font-size: 0.9rem; }
 .sample p { max-width: 30rem; text-wrap: balance; }
@@ -180,7 +180,7 @@ main { padding: 0 clamp(1rem, 2.2vw, 2.2rem) 3rem; display: grid; gap: 1.4rem; }
 .slate-state .status { font-size: clamp(1.3rem, 2.2vw, 2rem); color: var(--slate-ink); padding: 0.15em 0.55em; border: 2px solid var(--slate-soft); border-radius: 4px; background: none; }
 .slate-running .slate-state .status { border-color: #6fa8ff; color: #b9d5ff; }
 .slate-done .slate-state .status { border-color: #3fbf86; color: #8fe3bd; }
-.slate-escalated .slate-state .status { background: var(--stop); border-color: var(--stop); color: #fff; }
+.slate-escalated .slate-state .status { background: var(--stop); border-color: var(--stop); color: var(--on-stop); }
 
 .fields {
   display: grid;
@@ -241,24 +241,24 @@ main { padding: 0 clamp(1rem, 2.2vw, 2.2rem) 3rem; display: grid; gap: 1.4rem; }
 /* The event trail: time, mark on a line, then what happened. */
 .trail-list { background: var(--sheet); border: 1.5px solid var(--rule); border-radius: 5px; padding: 0.4rem 1.1rem; }
 .trail-list:has(> .empty) { background: none; border: 0; padding: 0; }
-.event { display: grid; grid-template-columns: 5.2rem 1.5rem minmax(0, 1fr); gap: 0 0.8rem; padding: 0.7rem 0; border-top: 1px solid #dfe3e6; }
+.event { display: grid; grid-template-columns: 5.2rem 1.5rem minmax(0, 1fr); gap: 0 0.8rem; padding: 0.7rem 0; border-top: 1px solid var(--rule); }
 .event:first-child { border-top: 0; }
 .event time { font: 500 0.82rem/1.9 var(--mono); letter-spacing: -0.02em; color: var(--soft); font-variant-numeric: tabular-nums; }
 .event > .glyph { font-size: 1.15rem; padding-top: 0.2rem; justify-content: center; color: var(--rule); }
 .event-title { font-size: 1.1rem; font-weight: 700; }
 .event-task { display: block; font-size: 0.85rem; font-weight: 600; color: var(--soft); }
 .event-result { font-size: 0.78rem; padding: 0.05em 0.5em; border: 1.5px solid currentColor; border-radius: 3px; vertical-align: 0.14em; white-space: nowrap; color: var(--soft); }
-.event-cause { color: #2a363f; }
+.event-cause { color: var(--ink); }
 .event-cause::first-letter { text-transform: uppercase; }
 .event-handoff > .glyph { color: var(--live); }
 .event-recovery > .glyph { color: var(--warn); }
 .event-recovery .event-result { background: var(--warn-fill); color: var(--ink); border-color: var(--ink); }
 .event-trouble > .glyph { color: var(--stop); }
-.event-trouble .event-result { background: var(--stop); color: #fff; border-color: var(--stop); }
+.event-trouble .event-result { background: var(--stop); color: var(--on-stop); border-color: var(--stop); }
 details { margin-top: 0.4rem; }
 summary { font-size: 0.78rem; color: var(--live); cursor: pointer; width: fit-content; }
 .data, .data-list { font-size: 0.92rem; }
-details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8rem; background: #eef1f3; border-radius: 4px; }
+details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8rem; background: var(--well); border-radius: 4px; }
 .data { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.25rem 0.9rem; }
 .data dt { font-weight: 700; color: var(--soft); }
 .data-list { display: grid; gap: 0.5rem; }
@@ -282,7 +282,7 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
 .post time { font: 600 1.05rem var(--mono); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .platform { font-size: 1rem; }
 .post-what { font-weight: 600; }
-.post-why { color: #2a363f; }
+.post-why { color: var(--ink); }
 
 .stop { background: var(--sheet); border: 2.5px solid var(--stop); border-radius: 5px; padding: 1.2rem 1.4rem; display: grid; gap: 0.5rem; max-width: 62rem; }
 .stop-title { display: flex; align-items: center; gap: 0.5em; font-size: clamp(1.4rem, 2.2vw, 2rem); font-weight: 750; font-stretch: 108%; color: var(--stop); }
@@ -369,6 +369,10 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
   --stop: #d3212f;
   --warn-fill: #ffcf33;
   --peer: #0b7a75;
+  --note: #fff1c9;
+  --well: #eef1f3;
+  --on-stop: #fff;
+  --on-fill: #1b1e23;
   --sign-face: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
   /* The colours of the 3D street. The street reads them at its start. */
   --st-panel: #f6f7f4; --st-ink: #1b1e23; --st-white: #f6f7f4; --st-route: #1f4fd8; --st-peer: #0b7a75; --st-backup: #8093b5;
@@ -433,3 +437,21 @@ body > .shed-menu, .shed-menu { position: absolute; }
 .slate .slate-state .status, .slate .slate-state .status .glyph { color: var(--ink); border-color: var(--ink); opacity: 1; }
 .slate .slate-state .status-done, .slate .slate-state .status-done .glyph { color: var(--peer); border-color: var(--peer); }
 .slate .slate-state .status-escalated, .slate .slate-state .status-escalated .glyph { color: var(--stop); border-color: var(--stop); }
+
+/* ---- the dark theme. The owner selects it with the button in the top bar; light is the default. ---- */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --desk: #16181d; --sheet: #23272e; --ink: #f1f2ee; --soft: #a5adb8; --rule: #4a515c;
+  --slate: #23272e; --slate-ink: #f1f2ee; --slate-soft: #a5adb8;
+  --live: #7096ff; --go: #3fbf86; --warn: #ffb866; --stop: #ff6b73; --peer: #45c9bf;
+  --note: #4a3d10; --well: #16181d; --on-stop: #16181d;
+  --st-panel: #23272e; --st-ink: #0b0c0f; --st-white: #e4e6e1; --st-route: #5f86f5; --st-peer: #2fb3a9; --st-backup: #7386a8;
+  --st-block: #f0525b; --st-road: #0f1115; --st-roadline: #c9ced6; --st-steel: #9aa3b0; --st-glass: #14171c; --st-ground: #3a404b;
+}
+/* Text on signboard yellow is dark in the two themes. */
+.tag-demo, .event-recovery .event-result, .street-tools button:first-child, .shed-menu, .shed-menu p { color: var(--on-fill); border-color: var(--on-fill); }
+.theme { font: 700 0.9rem var(--text); padding: 0.3rem 0.7rem; border: 2px solid var(--ink); background: none; color: var(--ink); cursor: pointer; }
+.theme:hover { background: var(--ink); color: var(--sheet); }
+.bar { gap: 0.8rem; }
+.bar .mark { margin-right: auto; }
+.bar .pick { margin-left: 0; }

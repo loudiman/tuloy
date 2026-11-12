@@ -8,10 +8,12 @@ export const peersPage = `<!doctype html>
 <link rel="preload" href="/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/martian-mono.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/page/style.css">
+<script src="/page/theme.ts"></script>
 </head>
 <body>
 <header class="bar">
   <p class="mark">Tuloy <span id="owner" class="owner"></span></p>
+  <button id="theme" class="theme" type="button">Dark theme</button>
   <nav class="nav" aria-label="Screens"><a href="/">Runs</a><a href="/peers" aria-current="page">Peers</a></nav>
 </header>
 
