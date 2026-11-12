@@ -22,6 +22,12 @@ const pageFiles: Record<string, { file: URL; type: string }> = {
   '/page/style.css': { file: file('./page/style.css'), type: 'text/css; charset=utf-8' },
   '/page/app.ts': { file: file('./page/app.ts'), type: 'text/javascript; charset=utf-8' },
   '/page/view.ts': { file: file('./page/view.ts'), type: 'text/javascript; charset=utf-8' },
+  '/page/street.ts': { file: file('./page/street.ts'), type: 'text/javascript; charset=utf-8' },
+  // The 3D library comes from the repo's own packages, so the page needs no internet.
+  '/vendor/three.module.js': { file: file('../node_modules/three/build/three.module.js'), type: 'text/javascript; charset=utf-8' },
+  '/vendor/three.core.js': { file: file('../node_modules/three/build/three.core.js'), type: 'text/javascript; charset=utf-8' },
+  '/vendor/OrbitControls.js': { file: file('../node_modules/three/examples/jsm/controls/OrbitControls.js'), type: 'text/javascript; charset=utf-8' },
+  '/fonts/barlow-condensed.woff2': { file: file('../node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-800-normal.woff2'), type: 'font/woff2' },
   '/fonts/archivo.woff2': { file: font('archivo/files/archivo-latin-standard-normal.woff2'), type: 'font/woff2' },
   '/fonts/martian-mono.woff2': { file: font('martian-mono/files/martian-mono-latin-wght-normal.woff2'), type: 'font/woff2' },
 };

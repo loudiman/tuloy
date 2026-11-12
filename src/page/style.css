@@ -347,3 +347,77 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
 /* ---- the recovery summary (plain for now: the page design comes later) ---- */
 .recovery { padding: 1rem 0 1.4rem; }
 .recovery ol { margin: 0.4rem 0 0; padding-left: 1.6rem; line-height: 1.5; }
+
+/* ---- the street look: jeepney signboards. Galvanised grey desk, signboard yellow, enamel red, route blue, bold narrow letters. ---- */
+@font-face {
+  font-family: 'Barlow Condensed';
+  src: url(/fonts/barlow-condensed.woff2) format('woff2');
+  font-weight: 800;
+  font-display: swap;
+}
+:root {
+  --desk: #d6dae0;
+  --sheet: #f6f7f4;
+  --ink: #1b1e23;
+  --soft: #5b626d;
+  --slate: #f6f7f4;
+  --slate-ink: #1b1e23;
+  --slate-soft: #5b626d;
+  --live: #1f4fd8;
+  --stop: #d3212f;
+  --warn-fill: #ffcf33;
+  --peer: #0b7a75;
+  --sign-face: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
+  /* The colours of the 3D street. The street reads them at its start. */
+  --st-panel: #f6f7f4; --st-ink: #1b1e23; --st-white: #f6f7f4; --st-route: #1f4fd8; --st-peer: #0b7a75; --st-backup: #8093b5;
+  --st-block: #d3212f; --st-sign: #ffcf33; --st-on-sign: #1b1e23; --st-road: #3b4049; --st-roadline: #f6f7f4; --st-steel: #c3c9d2; --st-glass: #2a2f37; --st-ground: #e7eae4;
+}
+.mark, .slate h1, .street-say, .did h2, .result > h2, .details > summary, .street-tools button, .shed-menu p {
+  font-family: var(--sign-face);
+  font-weight: 800;
+  font-stretch: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+.pick { margin-left: auto; font-weight: 700; display: flex; align-items: center; gap: 0.4rem; }
+.pick select { font: inherit; padding: 0.25rem 0.4rem; border: 2px solid var(--ink); border-radius: 0; background: var(--sheet); color: var(--ink); max-width: 16rem; }
+
+.slate { border: 3px solid var(--ink); border-radius: 0; padding: 0.8rem 1.1rem; box-shadow: none; }
+.slate::after, .slate::before { display: none; }
+.slate h1 { font-size: clamp(1.5rem, 2.6vw, 2.3rem); line-height: 1.02; }
+.slate .fields { margin-top: 0.6rem; padding-top: 0.5rem; }
+.slate .field dd { font-size: 1.05rem; }
+
+.street-card { position: relative; background: var(--sheet); border: 3px solid var(--ink); display: grid; }
+.street-say { font-size: clamp(1.4rem, 2.6vw, 2.2rem); line-height: 1.04; padding: 0.7rem 1.1rem 0; min-height: 2.9em; text-wrap: balance; }
+.street-say.say-trouble { color: var(--stop); }
+.street-say.say-recovery { color: var(--peer); }
+.street { width: 100%; aspect-ratio: 2.1 / 1; min-height: 320px; }
+.street canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.street-off { padding: 1rem 1.1rem; color: var(--soft); }
+.street-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; padding: 0.6rem 1.1rem; border-top: 3px solid var(--ink); }
+.street-tools button, .shed-menu button { border: 2px solid var(--ink); border-radius: 0; background: var(--sheet); color: var(--ink); padding: 0.3rem 0.8rem; cursor: pointer; }
+.street-tools button { font-size: 1.15rem; }
+.street-tools button:first-child { background: var(--warn-fill); }
+.street-tools label { font-weight: 600; display: flex; align-items: center; gap: 0.35rem; }
+.street-hint { margin-left: auto; color: var(--soft); font-size: 0.9rem; }
+.street-card .demo-note, .street-card .demo-pending { padding: 0 1.1rem; }
+.street-card .demo-note:not(:empty) { padding-bottom: 0.5rem; font-weight: 600; }
+.street-card #demo-clear { justify-self: start; margin: 0 1.1rem 0.7rem; }
+.shed-menu { position: absolute; z-index: 20; display: grid; gap: 0.3rem; padding: 0.7rem; background: var(--warn-fill); border: 3px solid var(--ink); width: 15rem; }
+.shed-menu p { font-size: 1.2rem; line-height: 1; margin-bottom: 0.2rem; }
+.shed-menu button { font: 600 0.95rem var(--text); text-align: left; }
+.shed-menu button:hover { background: var(--ink); color: var(--sheet); }
+body > .shed-menu, .shed-menu { position: absolute; }
+
+.after { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1.4rem; align-items: start; }
+.did { background: var(--sheet); border: 3px solid var(--ink); padding: 0.9rem 1.1rem 1.1rem; }
+.did h2, .result > h2 { font-size: 1.5rem; color: var(--ink); margin-bottom: 0.5rem; }
+.did ol { list-style: decimal; padding-left: 1.5rem; line-height: 1.45; }
+.did li.recovery-trouble { color: var(--stop); font-weight: 600; }
+.did li.recovery-recovery { color: var(--peer); font-weight: 600; }
+.did li.empty { list-style: none; margin-left: -1.5rem; color: var(--soft); }
+.details { border: 3px dashed var(--ink); padding: 0.6rem 1.1rem; }
+.details > summary { cursor: pointer; font-size: 1.2rem; }
+.details[open] > summary { margin-bottom: 1rem; }
+@media (max-width: 900px) { .after { grid-template-columns: minmax(0, 1fr); } .street-hint { margin-left: 0; } }

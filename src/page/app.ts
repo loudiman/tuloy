@@ -3,10 +3,12 @@
  * What is shown where is in the address (`#run=3&task=scripts`), so a refresh or a shared link opens the same view.
  * All text from the API goes in as text, never as HTML.
  */
+import { createStreet } from './street.ts';
+import type { Trip } from '../trip-view.ts';
 import { duration, headerOf, manilaTime, shownStatus, timelineOf, type EventView, type RunView, type TaskView } from './view.ts';
 
 type RunList = { owner: string; demo?: boolean; sampleGoal: string; runs: RunView[] };
-type RunDetail = { run: RunView; tasks: TaskView[]; events: EventView[]; recovery?: { kind: string; text: string }[] };
+type RunDetail = { run: RunView; tasks: TaskView[]; events: EventView[]; recovery?: { kind: string; text: string }[]; trip?: Trip };
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -94,6 +96,8 @@ async function refresh() {
 function draw() {
   drawBar();
   drawSlate();
+  drawStreet();
+  drawDid();
   drawTasks();
   drawTrail();
   drawResult();
@@ -165,8 +169,6 @@ function drawSlate() {
         ),
       ),
     ),
-    // The recovery summary: what went wrong and what the conductor did, in order. A run with no failure has none.
-    ...(detail.recovery?.length ? [h('section', { class: 'recovery' }, h('h2', {}, 'What the conductor did'), h('ol', {}, ...detail.recovery.map((line) => h('li', { class: `recovery-${line.kind}` }, line.text))))] : []),
   );
 }
 
@@ -349,6 +351,9 @@ function drawResult() {
 
 function drawRuns() {
   if (!list) return;
+  const pick = $('run-pick') as HTMLSelectElement;
+  pick.replaceChildren(...list.runs.map((run) => h('option', { value: String(run.id), ...(run.id === address().runId ? { selected: '' } : {}) }, `${run.id} · ${run.status}${run.forPeer ? ` · for ${run.forPeer}` : ''}`)));
+  pick.disabled = list.runs.length === 0;
   if (list.runs.length === 0) return $('runs').replaceChildren(h('li', { class: 'empty' }, 'Each run stays here after it ends, so you can open it later.'));
   const { runId } = address();
   $('runs').replaceChildren(
@@ -385,6 +390,63 @@ let pendingWorks = true;
 
 function drawDemo() {
   $('demo').hidden = !list?.demo;
+  $('street-demo-hint').hidden = !list?.demo;
+  if (list?.demo) $('street').dataset.demo = '1';
+  else delete $('street').dataset.demo;
+}
+
+// ---- the street: the run as a trip ----
+
+function say(text: string, tone = '') {
+  $('street-say').textContent = text;
+  $('street-say').className = `street-say say-${tone}`;
+}
+/** Demo mode: the menu of injections for the shed that the presenter selected. */
+function shedMenu(role: string, x: number, y: number) {
+  if (!list?.demo) return;
+  const menu = $('shed-menu');
+  menu.replaceChildren(
+    h('p', {}, `Block the ${role.replaceAll('_', ' ')} agent`),
+    ...kinds.map(([kind, label]) => {
+      const button = h('button', { type: 'button', role: 'menuitem' }, label);
+      button.addEventListener('click', () => {
+        menu.hidden = true;
+        void inject(kind, label, role);
+      });
+      return button;
+    }),
+  );
+  menu.hidden = false;
+  // The menu stays inside the window.
+  menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 12) + scrollX}px`;
+  menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 12) + scrollY}px`;
+}
+const street = createStreet($('street'), { say, onShed: shedMenu });
+$('street-off').hidden = street !== null;
+$('street').hidden = street === null;
+addEventListener('pointerdown', (event) => {
+  if (!$('shed-menu').contains(event.target as Node)) $('shed-menu').hidden = true;
+});
+addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') $('shed-menu').hidden = true;
+});
+$('replay').addEventListener('click', () => street?.replay());
+$('view-reset').addEventListener('click', () => street?.resetView());
+$('follow').addEventListener('change', () => street?.follow(($('follow') as HTMLInputElement).checked));
+$('run-pick').addEventListener('change', () => (location.hash = link(Number(($('run-pick') as HTMLSelectElement).value))));
+
+function drawStreet() {
+  if (!detail?.trip || !list) return say(list && !list.runs.length ? 'Give a goal. The jeepney carries the work from agent to agent.' : '');
+  if (!detail.trip.steps.length) say('The run starts.');
+  street?.show(String(detail.run.id), detail.trip, { owner: list.owner });
+}
+
+/** The recovery summary: what went wrong and what the conductor did, in order. */
+function drawDid() {
+  const lines = detail?.recovery ?? [];
+  $('did').replaceChildren(
+    ...(lines.length ? lines.map((line) => h('li', { class: `recovery-${line.kind}` }, line.text)) : [h('li', { class: 'empty' }, detail ? 'No task failed so far. The conductor did not have to recover.' : 'The list shows here when a run has a failure.')]),
+  );
 }
 
 /** Shows the injections that wait. A Tuloy with no injection API yet shows none, and the page stops asking. */
@@ -402,8 +464,7 @@ async function readPending() {
   );
 }
 
-async function inject(kind: string, label: string) {
-  const task = ($('demo-task') as HTMLSelectElement).value;
+async function inject(kind: string, label: string, task = ($('demo-task') as HTMLSelectElement).value) {
   const note = $('demo-note');
   note.className = 'demo-note';
   const response = await fetch('/api/injections', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, kind }) }).catch(() => undefined);
