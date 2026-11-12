@@ -14,8 +14,8 @@ const SX = [3.5, 9.5, 15.5, 21.5];
 const CROSS = [0.2, 6.5, 12.5, 18.5, 24.8];
 const OWN = 1;
 const PEER = 7.8;
-const HOME = { x: 9.5, y: 18.5, z: 32 };
-const CENTRE = { x: 12.5, y: 0, z: 3.6 };
+const HOME = { x: 10.1, y: 15.4, z: 27.4 };
+const CENTRE = { x: 12.5, y: 0, z: 4 };
 
 type Side = 'own' | 'peer';
 type BotState = 'idle' | 'working' | 'done' | 'blocked';
@@ -363,8 +363,16 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
     } else if (s.kind === 'goal_to_peer') {
       sign(lastBlocked, 'own', `Full goal → ${peer}`);
       barriers[lastBlocked]!.visible = true;
-      for (const n of [0, 1, 2, 3]) setBot(`${n}-peer`, 'idle');
+      for (const n of [0, 1, 2, 3]) {
+        setBot(`${n}-peer`, 'idle');
+        sign(n, 'peer', '');
+      }
       await goTo(CROSS[0]!, PEER, g);
+    } else if (s.kind === 'peer_progress' && i >= 0) {
+      // What the peer's Tuloy says about its own agents. For the full goal the jeepney goes along the peer's route.
+      if (s.lane === 'peer_goal') await goTo(SX[i]!, PEER, g);
+      if (still(g) && s.state) setBot(`${i}-peer`, s.state);
+      if (s.state === 'working') await pause(500);
     } else if (s.kind === 'end') {
       const done = /as done/.test(s.text);
       if (done) sign(3, at.y === PEER ? 'peer' : 'own', 'Done');

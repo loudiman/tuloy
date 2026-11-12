@@ -344,9 +344,6 @@ function drawResult() {
     );
   }
   result.replaceChildren(...parts);
-  // A done run leads with its result; a run that still works leads with its tasks.
-  if (run.status === 'done') $('slate').after(result);
-  else result.parentElement!.append(result);
 }
 
 function drawRuns() {

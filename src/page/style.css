@@ -384,7 +384,10 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
 
 .slate { border: 3px solid var(--ink); border-radius: 0; padding: 0.8rem 1.1rem; box-shadow: none; }
 .slate::after, .slate::before { display: none; }
-.slate h1 { font-size: clamp(1.5rem, 2.6vw, 2.3rem); line-height: 1.02; }
+.slate h1 { font-size: clamp(1.3rem, 2vw, 1.7rem); line-height: 1.05; max-width: none; }
+.slate .fields { display: flex; flex-wrap: wrap; gap: 0.3rem 2rem; }
+.slate .field { border: 0; padding: 0; }
+.slate-state .status { font-size: 1.3rem; }
 .slate .fields { margin-top: 0.6rem; padding-top: 0.5rem; }
 .slate .field dd { font-size: 1.05rem; }
 
@@ -392,7 +395,7 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
 .street-say { font-size: clamp(1.4rem, 2.6vw, 2.2rem); line-height: 1.04; padding: 0.7rem 1.1rem 0; min-height: 2.9em; text-wrap: balance; }
 .street-say.say-trouble { color: var(--stop); }
 .street-say.say-recovery { color: var(--peer); }
-.street { width: 100%; aspect-ratio: 2.1 / 1; min-height: 320px; }
+.street { width: 100%; aspect-ratio: 2.4 / 1; min-height: 320px; }
 .street canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .street-off { padding: 1rem 1.1rem; color: var(--soft); }
 .street-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; padding: 0.6rem 1.1rem; border-top: 3px solid var(--ink); }
