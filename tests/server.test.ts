@@ -7,7 +7,7 @@ import type { TuloyEvent } from '../src/store.ts';
 import { goodOutput } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
-async function startTestServer(options: { demo?: boolean; host?: string } = {}) {
+async function startTestServer(options: { demo?: boolean; host?: string; publicHost?: string; password?: string } = {}) {
   const { conductor, store } = testTuloy();
   const server = createServer({ store, conductor, owner: 'Lou', ...options });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -266,6 +266,44 @@ test('a name that points at this Tuloy (DNS rebinding) cannot read the runs, the
     expect(await rawCall(url, 'GET', '/.well-known/agent-card.json', rebound)).toBe(200);
     expect(await rawCall(url, 'GET', '/invite/abc', rebound)).toBe(200);
     expect(store.runs()).toHaveLength(1);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+// ---- A Tuloy on a public address: a password for the page and its API, and the public name of the host ----
+
+test('with a password, the page and its API ask for it; the agent card and the A2A endpoint do not', async () => {
+  const { server, url, store } = await startTestServer({ password: 'a-long-test-password', publicHost: 'lou.example.com' });
+  const { host } = new URL(url);
+  const basic = (password: string) => `Basic ${Buffer.from(`owner:${password}`).toString('base64')}`;
+  try {
+    expect(await rawCall(url, 'GET', '/', { host })).toBe(401);
+    expect(await rawCall(url, 'GET', '/api/runs', { host })).toBe(401);
+    expect(await rawCall(url, 'POST', '/api/runs', { host, authorization: basic('a-wrong-test-password') })).toBe(401);
+    expect(await rawCall(url, 'GET', '/api/events', { host, authorization: 'Bearer a-long-test-password' })).toBe(401);
+    expect(store.runs()).toHaveLength(0);
+    expect(await rawCall(url, 'GET', '/', { host, authorization: basic('a-long-test-password') })).toBe(200);
+    expect(await rawCall(url, 'POST', '/api/runs', { host, authorization: basic('a-long-test-password') })).toBe(201);
+    // The public name of the host, as a browser behind the provider's https sends it: no port.
+    expect(await rawCall(url, 'GET', '/api/runs', { host: 'lou.example.com', origin: 'https://lou.example.com', authorization: basic('a-long-test-password') })).toBe(200);
+    expect(await rawCall(url, 'GET', '/api/runs', { host: 'evil.example.com', authorization: basic('a-long-test-password') })).toBe(403);
+    // A peer needs no password of the page: its key is the proof.
+    expect(await rawCall(url, 'GET', '/.well-known/agent-card.json', { host: 'lou.example.com' })).toBe(200);
+    // The A2A endpoint refuses a call with no key by itself. It does not ask for the password of the page.
+    const peerCall = await fetch(`${url}/a2a`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    expect(peerCall.headers.get('www-authenticate') ?? '').not.toContain('realm="Tuloy"');
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test('with no password, a Tuloy on this machine works as before', async () => {
+  const { server, url } = await startTestServer();
+  try {
+    expect(await rawCall(url, 'GET', '/api/runs', { host: new URL(url).host })).toBe(200);
   } finally {
     server.closeAllConnections();
     server.close();

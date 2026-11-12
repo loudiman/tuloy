@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import { AGENT_CARD_PATH } from '@a2a-js/sdk';
@@ -46,6 +47,8 @@ export function createServer({
   demo = false,
   peerAllowLocal = false,
   host = '127.0.0.1',
+  publicHost,
+  password,
 }: {
   store: Store;
   conductor: Conductor;
@@ -54,6 +57,10 @@ export function createServer({
   demo?: boolean;
   peerAllowLocal?: boolean;
   host?: string;
+  /** The setting TULOY_PUBLIC_HOST: the name of this Tuloy behind a provider's https, as a browser sends it in Host. */
+  publicHost?: string;
+  /** The setting TULOY_DASHBOARD_PASSWORD. With it, the page and its API ask the browser for this password (any user name). */
+  password?: string;
 }) {
   const peerServer = createPeerServer({ store, conductor, owner, peerTasksPerHour, allowLocal: peerAllowLocal });
   return http.createServer(async (req, res) => {
@@ -65,9 +72,19 @@ export function createServer({
     // Not checked: the A2A endpoint (the key is the proof), the agent card (public) and an invite link (the token is the proof).
     if (path !== '/a2a' && path !== `/${AGENT_CARD_PATH}` && !path.startsWith('/invite/')) {
       const named = req.headers.host;
-      const own = ['localhost', '127.0.0.1', host].map((name) => `${name}:${req.socket.localPort}`);
+      const own = [...['localhost', '127.0.0.1', host].map((name) => `${name}:${req.socket.localPort}`), ...(publicHost ? [publicHost] : [])];
       const origin = req.headers.origin;
       if (!named || !own.includes(named) || (origin !== undefined && URL.parse(origin)?.host !== named)) return json(403, { error: 'Only this Tuloy\'s own page can do this.' });
+      // The password of the page: the browser asks for it one time and sends it with each call of the page (HTTP Basic).
+      // It is safe only over https, which the hosting provider gives. ponytail: no limit on wrong tries; the password has 16 characters or more. Add a limit when a Tuloy is a target.
+      if (password !== undefined) {
+        const given = /^Basic (.+)$/.exec(req.headers.authorization ?? '')?.[1];
+        const text = given ? Buffer.from(given, 'base64').toString() : '';
+        const digest = (value: string) => createHash('sha256').update(value).digest();
+        if (!given || !text.includes(':') || !timingSafeEqual(digest(text.slice(text.indexOf(':') + 1)), digest(password))) {
+          return res.writeHead(401, { 'www-authenticate': 'Basic realm="Tuloy", charset="UTF-8"', 'content-type': 'application/json' }).end(JSON.stringify({ error: 'This Tuloy needs its password.' }));
+        }
+      }
     }
     if (await peerServer.handle(req, res)) return;
     const runId = Number(/^\/api\/runs\/(\d+)$/.exec(path)?.[1]);

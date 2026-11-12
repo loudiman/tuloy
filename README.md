@@ -52,6 +52,27 @@ By default the trend scout proposes trends from the knowledge of the model. With
 - Each search returns 5 results at most. Tuloy sends OpenRouter's limits with the tool: 3 searches for one call (`max_uses`) and 15 results in all. The instruction says the same. With a model's own search, OpenRouter passes `max_uses` on to Anthropic only, so for other models the instruction and the time limit of the task are the limits.
 - Text from a web page is data for the model, not instructions.
 
+## Host a Tuloy
+
+A Tuloy on a server is one Node process that stays on, with a disk for its data folder (`TULOY_DATA_DIR`). Each owner hosts their own. Three rules apply before it is open to a network:
+
+1. **The page has a password.** Set `TULOY_DASHBOARD_PASSWORD` (16 characters or more). The browser asks for it one time; the user name can be any text. The password is safe only over `https`, which the hosting provider gives. Tuloy does not start open to a network with no password: its page can start runs, and each run spends your credits.
+2. **Demo mode is off.** Tuloy does not start open to a network with `TULOY_DEMO=1`: in demo mode a visitor can make failures on purpose.
+3. **The key is a secret of the provider.** Put `OPENROUTER_API_KEY` and `TULOY_DASHBOARD_PASSWORD` in the provider's secret store, not in a file of the repo. Set a spending limit for the key at OpenRouter, so that a fault cannot spend more than that.
+
+The settings for a hosted Tuloy:
+
+| Setting | Value |
+| --- | --- |
+| `TULOY_HOST` | `0.0.0.0`, so that the provider can reach the process |
+| `TULOY_PUBLIC_HOST` | The name in the address bar, for example `lou.example.com` (no `https://`, no port) |
+| `TULOY_DASHBOARD_PASSWORD` | The password of the page, 16 characters or more |
+| `TULOY_DATA_DIR` | A folder on the disk that stays after a restart |
+
+What stays open with no password, on purpose: the agent card, an invite link (its token is the proof), and the A2A endpoint (it takes work only with a key from the allowed list). A peer does not need the password of your page.
+
+Not built: a limit on wrong password tries, and a sign-out button (close the browser to sign out).
+
 ## Run two Tuloys on one laptop
 
 This is the demo path: the owner's own models go down, and the conductor re-routes the script task to a peer. The second Tuloy is a sample owner, not a second person.
@@ -104,7 +125,7 @@ An injection waits until an attempt of that agent uses it, in a run of the owner
 ## Who can call a Tuloy
 
 - Tuloy listens on `127.0.0.1` (this machine only). Set `TULOY_HOST` (for example `0.0.0.0`) to serve other machines.
-- The page and its API have no login. Every call to the page, its API and the live events, a read included, is refused with 403 unless its `Host` header is `localhost` or `127.0.0.1` with the port, or the `TULOY_HOST` value with the port, and its `Origin`, when a browser sends one, is that same address. So open the dashboard by one of these names. The agent card and an invite link are open to everybody.
+- On this machine, the page and its API have no login. A Tuloy that is open to a network needs a password: see "Host a Tuloy". Every call to the page, its API and the live events, a read included, is refused with 403 unless its `Host` header is `localhost` or `127.0.0.1` with the port, or the `TULOY_HOST` value with the port, and its `Origin`, when a browser sends one, is that same address. So open the dashboard by one of these names. The agent card and an invite link are open to everybody.
 - The A2A endpoint (`/a2a`) takes work only with a key from the allowed list. An invite link and the agent card of a peer must be `https` and not at a private address, unless `TULOY_PEER_ALLOW_LOCAL=1` (this machine only, plain http).
 - While a Tuloy has work for a peer, it tells that peer which of its agents works and which are done (the role and the state, as JSON text in the A2A working status: `{ "tuloy_progress": [{ "role", "state" }] }`). It sends no output, no reason and no model name before the result. The Tuloy that gets this progress checks it as outside data and drops all that does not match.
 - A numeric setting that is not a whole number in its range stops the start, with a message that names the setting.
