@@ -5,6 +5,18 @@ Tuloy ("keep going") runs a team of AI agents toward a goal and recovers by itse
 - Install: `pnpm install`. Test: `pnpm test`. Typecheck: `pnpm typecheck`.
 - Start one Tuloy: copy `.env.example` to `.env`, fill in `OPENROUTER_API_KEY`, `TULOY_PRIMARY_MODEL` and `TULOY_BACKUP_MODEL`, then `pnpm start`. The dashboard is at http://localhost:4000.
 
+## The Runs page
+
+The Runs page shows a run as a trip on a 3D street. Your route is the far road and a peer's route is the near road. Each agent is a robot at a waiting shed, and a jeepney carries the work from stop to stop. A blocked stop gets a road sign with the stuck reason. When the conductor re-routes a task to a peer, the jeepney goes to the peer's road.
+
+![The run ended as done after a re-route to a peer](docs/screenshots/3d-4-done.png)
+
+- Drag to turn the street. Hold ⌘ or Ctrl and scroll to zoom. **Reset the view** puts it back, and **Follow the jeepney** moves the view with the jeepney.
+- **Replay the trip** plays an ended run from its start.
+- In demo mode, a click on a shed of your route opens the menu of injections for that agent.
+- The button in the top bar switches between the light theme and the dark theme.
+- The browser must have WebGL. Without it, the page shows the list "What the conductor did" and the result.
+
 ## Run two Tuloys on one laptop
 
 This is the demo path: the owner's own models go down, and the conductor re-routes the script task to a peer. The second Tuloy is a sample owner, not a second person.

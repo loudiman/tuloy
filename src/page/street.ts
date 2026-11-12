@@ -57,6 +57,10 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   view.append(renderer.domElement);
+  // A plain scroll moves the page. A scroll with Ctrl or ⌘ (and a pinch) zooms the street. This goes before the controls, so that they do not get a plain scroll.
+  renderer.domElement.addEventListener('wheel', (event) => {
+    if (!event.ctrlKey && !event.metaKey) event.stopImmediatePropagation();
+  });
   const controls = new OrbitControls(camera, renderer.domElement);
   Object.assign(controls, { enableDamping: true, maxPolarAngle: 1.45, minDistance: 10, maxDistance: 70 });
 
