@@ -22,7 +22,7 @@ export type TripStop = {
 export type TripStep = {
   /** The `seq` of the event. */
   seq: number;
-  kind: 'start' | 'work' | 'done' | 'failure' | 'retry' | 'reroute' | 'rejection' | 'pass' | 'goal_to_peer' | 'injection' | 'restart' | 'end';
+  kind: 'start' | 'work' | 'done' | 'failure' | 'retry' | 'reroute' | 'rejection' | 'pass' | 'goal_to_peer' | 'peer_progress' | 'injection' | 'restart' | 'end';
   /** The task id of the stop. Null for a step of the whole run. */
   stop: string | null;
   /** The role of the stop's task: which agent. `goal` is the full goal at a peer's conductor. Null for a step of the whole run. */
@@ -40,13 +40,18 @@ export type TripStep = {
   failure?: string;
   /** For a failure or a rejection: true when the presenter injected it in demo mode. It is not a real failure. */
   injected?: true;
+  /** For `peer_progress`: what the peer's agent (`role`) does now, as the peer's Tuloy said. */
+  state?: 'working' | 'done' | 'blocked';
   /** For a retry: retry `retry` of `of`, after a wait of `waitMs`. */
   retry?: number;
   of?: number;
   waitMs?: number;
 };
 
-export type Trip = { status: Run['status']; forPeer: string | null; stops: TripStop[]; steps: TripStep[] };
+/** The last known state of one of the peer's agents, while the peer has or had the full goal. */
+export type PeerStop = { role: Skill; state: 'waiting' | 'working' | 'done' | 'blocked' };
+
+export type Trip = { status: Run['status']; forPeer: string | null; stops: TripStop[]; steps: TripStep[]; peerStops?: PeerStop[] };
 
 const carriesIn: Record<string, string> = { trend_scout: 'Goal', script: 'Trends', reviewer: 'Scripts', scheduler: 'Review', goal: 'Goal' };
 const carriesOut: Record<string, string> = { trend_scout: 'Trends', script: 'Scripts', reviewer: 'Review', scheduler: 'Schedule', goal: 'Scripts and schedule' };
@@ -70,13 +75,14 @@ export function tripOf(run: Run, tasks: Task[], events: TuloyEvent[]): Trip {
   const stops = new Map<string, TripStop>(tasks.map((t) => [t.id, { id: t.id, role: t.role, title: t.title, state: 'waiting', lane: t.role === 'goal' ? 'peer_goal' : 'own', lastHeartbeat: null }]));
   const steps: TripStep[] = [];
   const injected = new Set<string>();
+  let peerStops: PeerStop[] | undefined;
   let cargo = 'Goal';
   for (const { event: e, name, who, line } of replay(events)) {
     const id = e.taskId;
     const task = id ? stops.get(id) : undefined;
     // The pass has the script task in its event, but it occurs at the reviewer's stop.
     const stop = e.action === 'review' && e.result === 'pass' ? ([...stops.values()].find((s) => s.role === 'reviewer') ?? task) : task;
-    const data = (e.data ?? {}) as { peer?: string; retry?: number; of?: number; waitMs?: number };
+    const data = (e.data ?? {}) as { peer?: string; retry?: number; of?: number; waitMs?: number; role?: Skill; state?: 'working' | 'done' | 'blocked' };
     const set = (state: TripStop['state']) => stop && Object.assign(stop, { state, lastHeartbeat: null });
     const step = (kind: TripStep['kind'], text: string, tone: TripStep['tone'], more: Partial<TripStep> = {}) =>
       void steps.push({ seq: e.seq, kind, stop: stop?.id ?? id, role: stop?.role ?? null, lane: stop?.lane ?? 'own', ...(stop?.peer && { peer: stop.peer }), cargo, text: line?.text ?? text, tone: line?.kind ?? tone, ...more });
@@ -117,11 +123,17 @@ export function tripOf(run: Run, tasks: Task[], events: TuloyEvent[]): Trip {
       if (id) injected.delete(id);
       cargo = carriesOut[stop?.role ?? ''] ?? cargo;
       step('done', `${who} finished the ${name} task.`, 'ok');
+    } else if (e.action === 'peer_progress' && data.role && data.state) {
+      const known = peerStops?.find((s) => s.role === data.role);
+      if (known && stop?.role === 'goal') known.state = data.state;
+      step('peer_progress', `${e.cause}.`, data.state === 'blocked' ? 'trouble' : 'ok', { role: data.role, peer: data.peer, state: data.state });
     } else if (e.action === 'goal_to_peer') {
+      // A peer's Tuloy has the same four agents. Each waits until the peer says more.
+      peerStops = (['trend_scout', 'script', 'reviewer', 'scheduler'] as const).map((role) => ({ role, state: 'waiting' }));
       cargo = 'Goal';
       step('goal_to_peer', '', 'recovery', { stop: 'goal', role: 'goal', lane: 'peer_goal', peer: e.result });
     } else if (e.action === 'escalate') set('blocked');
     else if (e.action === 'end') step('end', 'The run ended as done.', 'end');
   }
-  return { status: run.status, forPeer: run.forPeer, stops: [...stops.values()], steps };
+  return { status: run.status, forPeer: run.forPeer, stops: [...stops.values()], steps, ...(peerStops && { peerStops }) };
 }
