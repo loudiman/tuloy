@@ -88,6 +88,7 @@ fly deploy                   # builds the image and starts the machine; the firs
 Then open `https://<app>.fly.dev`. The browser asks for the password; the user name can be any text.
 
 - The machine stays on (`auto_stop_machines = "off"`), so that a run and the work for a peer go on with no browser open. This costs money each month; see the Fly.io price page.
+- `fly.sam.toml` is the same for a second Tuloy, the sample owner Sam: `fly apps create tuloy-sam`, `fly secrets set ... -a tuloy-sam`, then `fly deploy --config fly.sam.toml --ha=false`.
 - A second owner does the same steps with their own app name and their own key. Then the two connect by invite, as on one laptop, with no `TULOY_PEER_ALLOW_LOCAL`: a hosted Tuloy gives its `https` address in the invite link.
 - To test the image on your own machine first: `docker build -t tuloy-local .` and `docker run -p 8080:8080 -e OPENROUTER_API_KEY=... -e TULOY_PRIMARY_MODEL=... -e TULOY_BACKUP_MODEL=... -e TULOY_PUBLIC_HOST=localhost:8080 -e TULOY_DASHBOARD_PASSWORD=... tuloy-local`.
 
