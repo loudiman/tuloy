@@ -7,7 +7,7 @@ import { createStreet } from './street.ts';
 import type { Trip } from '../trip-view.ts';
 import { duration, headerOf, manilaTime, shownStatus, timelineOf, type EventView, type RunView, type TaskView } from './view.ts';
 
-type RunList = { owner: string; demo?: boolean; sampleGoal: string; peers?: string[]; runs: RunView[] };
+type RunList = { owner: string; demo?: boolean; signedIn?: boolean; publicRead?: boolean; sampleGoal: string; peers?: string[]; runs: RunView[] };
 type RunDetail = { run: RunView; tasks: TaskView[]; events: EventView[]; recovery?: { kind: string; text: string }[]; trip?: Trip };
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -110,6 +110,8 @@ function drawBar() {
   $('owner').textContent = `of ${list.owner}`;
   $('sample-goal').textContent = list.sampleGoal;
   $('demo-tag').hidden = !list.demo;
+  // A reader of a public Tuloy sees the runs. The owner signs in to start a run or to make a failure on purpose.
+  $('signin').hidden = !(list.publicRead && !list.signedIn);
 }
 
 function drawSlate() {

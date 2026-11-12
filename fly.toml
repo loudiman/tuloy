@@ -7,6 +7,9 @@ primary_region = "sin" # Singapore: the nearest region to Manila
 [env]
   TULOY_OWNER = "Lou"
   TULOY_PUBLIC_HOST = "tuloy-lou.fly.dev"
+  # A demo link: everybody may see the runs; only the owner, with the password, starts a run or injects a failure.
+  TULOY_PUBLIC_READ = "1"
+  TULOY_DEMO = "1"
   TULOY_PRIMARY_MODEL = "anthropic/claude-sonnet-5.5"
   TULOY_BACKUP_MODEL = "openai/gpt-6.1-terra"
 

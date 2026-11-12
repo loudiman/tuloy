@@ -512,3 +512,6 @@ body > .shed-menu, .shed-menu { position: absolute; }
 .trends ul { display: grid; gap: 0.35rem; }
 .trends .sources { list-style: decimal; padding-left: 1.4rem; font-size: 0.9rem; border-top: 1px solid var(--rule); padding-top: 0.5rem; }
 .trends .sources a { color: var(--live); overflow-wrap: anywhere; }
+
+/* The owner's sign-in link of a public Tuloy looks like the theme button. */
+a.theme { text-decoration: none; }

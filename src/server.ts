@@ -49,6 +49,7 @@ export function createServer({
   host = '127.0.0.1',
   publicHost,
   password,
+  publicRead = false,
 }: {
   store: Store;
   conductor: Conductor;
@@ -61,6 +62,8 @@ export function createServer({
   publicHost?: string;
   /** The setting TULOY_DASHBOARD_PASSWORD. With it, the page and its API ask the browser for this password (any user name). */
   password?: string;
+  /** The setting TULOY_PUBLIC_READ: everybody may see the Runs page and the runs; only the owner, with the password, can change something. */
+  publicRead?: boolean;
 }) {
   // A hosted Tuloy is behind the provider's https. Peers must get that address, not the address inside the server.
   const peerServer = createPeerServer({ store, conductor, owner, peerTasksPerHour, allowLocal: peerAllowLocal, publicAddress: publicHost && `https://${publicHost}` });
@@ -71,6 +74,8 @@ export function createServer({
     // Each call, a read included, must name this Tuloy's own address in Host (a name of another site that points here,
     // DNS rebinding, does not), and its Origin, when the browser sends one, must be that same address.
     // Not checked: the A2A endpoint (the key is the proof), the agent card (public) and an invite link (the token is the proof).
+    // True when the caller is the owner: on this machine with no password set, or with the right password.
+    let signedIn = password === undefined;
     if (path !== '/a2a' && path !== `/${AGENT_CARD_PATH}` && !path.startsWith('/invite/')) {
       const named = req.headers.host;
       const own = [...['localhost', '127.0.0.1', host].map((name) => `${name}:${req.socket.localPort}`), ...(publicHost ? [publicHost] : [])];
@@ -82,11 +87,19 @@ export function createServer({
         const given = /^Basic (.+)$/.exec(req.headers.authorization ?? '')?.[1];
         const text = given ? Buffer.from(given, 'base64').toString() : '';
         const digest = (value: string) => createHash('sha256').update(value).digest();
-        if (!given || !text.includes(':') || !timingSafeEqual(digest(text.slice(text.indexOf(':') + 1)), digest(password))) {
-          return res.writeHead(401, { 'www-authenticate': 'Basic realm="Tuloy", charset="UTF-8"', 'content-type': 'application/json' }).end(JSON.stringify({ error: 'This Tuloy needs its password.' }));
+        signedIn = !!given && text.includes(':') && timingSafeEqual(digest(text.slice(text.indexOf(':') + 1)), digest(password));
+        // Public read (TULOY_PUBLIC_READ): a reader with no password sees the Runs page, the runs and the live events. No more than that:
+        // each change, the peers, the invites and the injections stay with the owner.
+        const readable = publicRead && req.method === 'GET' && (path in pageFiles || path === '/api/runs' || /^\/api\/runs\/\d+$/.test(path) || path === '/api/events');
+        if (!signedIn && !readable) {
+          // With public read, a refused call of the page's API must not make the browser ask a reader for a password. The owner signs in at /signin.
+          const ask = publicRead && path.startsWith('/api/') ? {} : { 'www-authenticate': 'Basic realm="Tuloy", charset="UTF-8"' };
+          return res.writeHead(401, { ...ask, 'content-type': 'application/json' }).end(JSON.stringify({ error: 'This Tuloy needs its password.' }));
         }
       }
     }
+    // The owner's sign-in: the browser asked for the password to get here. Back to the page.
+    if (req.method === 'GET' && path === '/signin') return res.writeHead(302, { location: '/' }).end();
     if (await peerServer.handle(req, res)) return;
     const runId = Number(/^\/api\/runs\/(\d+)$/.exec(path)?.[1]);
 
@@ -96,7 +109,7 @@ export function createServer({
       const body = readFileSync(pageFile.file);
       return res.writeHead(200, { 'content-type': pageFile.type }).end(path.endsWith('.ts') ? stripTypeScriptTypes(body.toString()) : body);
     }
-    if (req.method === 'GET' && path === '/api/runs') return json(200, { owner, demo, sampleGoal: SAMPLE_GOAL, peers: store.peers().map((p) => p.name), runs: store.runs() });
+    if (req.method === 'GET' && path === '/api/runs') return json(200, { owner, demo: demo && signedIn, signedIn, publicRead, sampleGoal: SAMPLE_GOAL, peers: store.peers().map((p) => p.name), runs: store.runs() }); // a reader does not get the controls of demo mode
     if (req.method === 'POST' && path === '/api/runs') {
       // An empty body starts the labelled sample goal.
       const body = await readBody(req);

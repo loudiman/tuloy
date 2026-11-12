@@ -23,6 +23,6 @@ const conductor = createConductor({ store, models, clock: systemClock, limits: s
 // Runs that were not finished at the last stop continue now, with no action from the owner.
 conductor.continueRuns();
 // TULOY_HOST is 127.0.0.1 unless the owner sets it. A Tuloy that is open to a network needs TULOY_DASHBOARD_PASSWORD (the settings refuse the start with none). The A2A endpoint takes work only with a key from the allowed list.
-createServer({ store, conductor, owner: settings.owner, demo: settings.demo, peerTasksPerHour: settings.peerTasksPerHour, peerAllowLocal: settings.peerAllowLocal, host: settings.host, publicHost: settings.publicHost, password: settings.dashboardPassword }).listen(settings.port, settings.host, () => {
+createServer({ store, conductor, owner: settings.owner, demo: settings.demo, peerTasksPerHour: settings.peerTasksPerHour, peerAllowLocal: settings.peerAllowLocal, host: settings.host, publicHost: settings.publicHost, password: settings.dashboardPassword, publicRead: settings.publicRead }).listen(settings.port, settings.host, () => {
   console.log(`Tuloy of ${settings.owner}: http://localhost:${settings.port}`);
 });

@@ -7,7 +7,7 @@ import type { TuloyEvent } from '../src/store.ts';
 import { goodOutput } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
-async function startTestServer(options: { demo?: boolean; host?: string; publicHost?: string; password?: string } = {}) {
+async function startTestServer(options: { demo?: boolean; host?: string; publicHost?: string; password?: string; publicRead?: boolean } = {}) {
   const { conductor, store } = testTuloy();
   const server = createServer({ store, conductor, owner: 'Lou', ...options });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -316,6 +316,48 @@ test('with no password, a Tuloy on this machine works as before', async () => {
   const { server, url } = await startTestServer();
   try {
     expect(await rawCall(url, 'GET', '/api/runs', { host: new URL(url).host })).toBe(200);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+// ---- A Tuloy that everybody may look at: a reader sees the runs, and only the owner, with the password, can change something ----
+
+test('with public read, a reader with no password sees the Runs page and the runs; each change, the peers and the injections still need the password', async () => {
+  const { server, url, conductor } = await startTestServer({ password: 'a-long-test-password', publicRead: true, demo: true });
+  const owner = { authorization: `Basic ${Buffer.from('owner:a-long-test-password').toString('base64')}` };
+  try {
+    const { runId } = conductor.startRun('A goal of the owner.');
+    // A reader: the page, its files, the list of runs, one run, the live events.
+    for (const path of ['/', '/page/app.ts', '/page/style.css', '/vendor/three.module.js', '/api/runs', `/api/runs/${runId}`]) expect([path, (await fetch(url + path)).status]).toEqual([path, 200]);
+    const stream = await fetch(`${url}/api/events`);
+    expect(stream.status).toBe(200);
+    await stream.body!.cancel();
+    // A reader does not get the controls of demo mode, and the page knows that nobody is signed in.
+    expect(await (await fetch(`${url}/api/runs`)).json()).toMatchObject({ demo: false, signedIn: false, publicRead: true });
+    // A reader cannot change something, and cannot read the peers or the injections.
+    for (const [method, path] of [['POST', '/api/runs'], ['POST', '/api/injections'], ['DELETE', '/api/injections'], ['GET', '/api/injections'], ['GET', '/api/peers'], ['POST', '/api/invites'], ['GET', '/peers']] as const) {
+      expect([method, path, (await fetch(url + path, { method })).status]).toEqual([method, path, 401]);
+    }
+    // A refused call of the page's API does not make the browser ask a reader for a password. The sign-in address does.
+    expect((await fetch(`${url}/api/runs`, { method: 'POST' })).headers.get('www-authenticate')).toBeNull();
+    expect((await fetch(`${url}/signin`)).headers.get('www-authenticate')).toContain('Basic');
+    // The owner signs in at /signin, goes back to the page, and has the controls of demo mode.
+    const signedIn = await fetch(`${url}/signin`, { headers: owner, redirect: 'manual' });
+    expect([signedIn.status, signedIn.headers.get('location')]).toEqual([302, '/']);
+    expect(await (await fetch(`${url}/api/runs`, { headers: owner })).json()).toMatchObject({ demo: true, signedIn: true });
+    expect((await fetch(`${url}/api/runs`, { method: 'POST', headers: owner })).status).toBe(201);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test('with no public read, a reader with no password still sees nothing', async () => {
+  const { server, url } = await startTestServer({ password: 'a-long-test-password' });
+  try {
+    for (const path of ['/', '/api/runs', '/api/events']) expect([path, (await fetch(url + path)).status]).toEqual([path, 401]);
   } finally {
     server.closeAllConnections();
     server.close();
