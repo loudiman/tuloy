@@ -1,0 +1,293 @@
+import { mkdtempSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { expect, test } from 'vitest';
+import { nextAction, type Failure } from '../src/recovery-policy.ts';
+import { createServer } from '../src/server.ts';
+import { SAMPLE_GOAL } from '../src/planner.ts';
+import { taskViews } from '../src/task-view.ts';
+import { goodOutput } from './harness/scripted-model.ts';
+import { testTuloy } from './harness/tuloy.ts';
+
+type Tuloy = ReturnType<typeof testTuloy>;
+/** The events of one task as short lines: "action result". */
+const trail = ({ store }: Tuloy, runId: number, taskId: string) => store.events(runId).filter((e) => e.taskId === taskId).map((e) => `${e.action} ${e.result}`);
+
+/** The reviewer rejects script s1 and passes s2. */
+const rejection = {
+  reviews: [
+    { script_id: 's1', verdict: 'reject', score: 3, issues: ['The hook is weak.', 'The cta has two actions.'], hints: ['Open with a question.'] },
+    { script_id: 's2', verdict: 'pass', score: 8, issues: [], hints: [] },
+  ],
+};
+
+test('a rejected script is written again with the reviewer’s issues and hints; after a pass the scheduler starts and the run ends as done', async () => {
+  const tuloy = testTuloy({ script: { reviewer: [rejection] } });
+  const { conductor, store, model } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(store.tasks(runId).map((t) => [t.id, t.status])).toEqual([
+    ['trends', 'done'],
+    ['scripts', 'done'],
+    ['review', 'done'],
+    ['schedule', 'done'],
+  ]);
+  expect(trail(tuloy, runId, 'scripts')).toEqual([
+    'assign script',
+    'handoff checked content stored',
+    'dispatch started',
+    'validate valid',
+    'review rejected',
+    'retry waiting',
+    'handoff checked content stored',
+    'dispatch started',
+    'validate valid',
+    'review pass',
+  ]);
+
+  // The second attempt of the script agent gets the issues and hints of the rejected script, and only of that one.
+  const hints = [{ script_id: 's1', issues: ['The hook is weak.', 'The cta has two actions.'], hints: ['Open with a question.'] }];
+  const scriptCalls = model.calls.filter((c) => c.role === 'script').map((c) => JSON.parse(c.prompt));
+  expect(scriptCalls).toHaveLength(2);
+  expect(scriptCalls[0].reviewer_hints).toBeUndefined();
+  expect(scriptCalls[1]).toEqual({ goal: SAMPLE_GOAL, ...(goodOutput.trend_scout as object), reviewer_hints: hints });
+
+  // The scheduler starts only after the pass.
+  const events = store.events(runId);
+  const pass = events.find((e) => e.action === 'review' && e.result === 'pass')!;
+  expect(events.filter((e) => e.taskId === 'schedule').every((e) => e.seq > pass.seq)).toBe(true);
+});
+
+test('a script that is still rejected at the retry limit is re-routed to the backup model with the hints; its script passes and the run ends as done', async () => {
+  // The backup model has no failure. The reviewer rejects the three scripts of the primary model.
+  const tuloy = testTuloy({ script: { reviewer: [rejection, rejection, rejection] }, backupScript: {} });
+  const { conductor, store, model, backup } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(store.tasks(runId).map((t) => t.status)).toEqual(['done', 'done', 'done', 'done']);
+  expect(trail(tuloy, runId, 'scripts').slice(-11)).toEqual([
+    'review rejected',
+    'retry waiting',
+    'handoff checked content stored',
+    'dispatch started',
+    'validate valid',
+    'review rejected',
+    'reroute backup model',
+    'handoff checked content stored',
+    'dispatch started',
+    'validate valid',
+    'review pass',
+  ]);
+  expect(store.events(runId).filter((e) => e.taskId === 'scripts' && ['reroute', 'dispatch'].includes(e.action)).slice(-2)).toMatchObject([
+    { action: 'reroute', result: 'backup model', cause: '2 of 2 retries used' },
+    { action: 'dispatch', result: 'started', cause: 're-routed to the backup model' },
+  ]);
+  // The primary model wrote three scripts. The backup model wrote one, with the reviewer's issues and hints in its input.
+  expect(model.calls.filter((c) => c.role === 'script')).toHaveLength(3);
+  expect(backup.calls.map((c) => [c.role, JSON.parse(c.prompt).reviewer_hints])).toEqual([
+    ['script', [{ script_id: 's1', issues: ['The hook is weak.', 'The cta has two actions.'], hints: ['Open with a question.'] }]],
+  ]);
+  // The scheduler starts only after the pass.
+  const events = store.events(runId);
+  const pass = events.find((e) => e.action === 'review' && e.result === 'pass')!;
+  expect(events.filter((e) => e.taskId === 'schedule').every((e) => e.seq > pass.seq)).toBe(true);
+});
+
+test('a script of the backup model that is rejected too is never scheduled, and the run ends as escalated', async () => {
+  const tuloy = testTuloy({ script: { reviewer: [rejection, rejection, rejection, rejection] }, backupScript: {} });
+  const { conductor, store, model, backup } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(store.tasks(runId).map((t) => [t.id, t.status])).toEqual([
+    ['trends', 'done'],
+    ['scripts', 'escalated'],
+    ['review', 'waiting_on_dependency'],
+    ['schedule', 'waiting_on_dependency'],
+  ]);
+  // One first attempt and two retries on the primary model, one attempt on the backup model, each with its review. Not one more.
+  expect(model.calls.map((c) => c.role)).toEqual(['trend_scout', 'script', 'reviewer', 'script', 'reviewer', 'script', 'reviewer', 'reviewer']);
+  expect(backup.calls.map((c) => c.role)).toEqual(['script']);
+  expect(store.events(runId).slice(-3)).toMatchObject([
+    { taskId: 'scripts', action: 'review', result: 'rejected', cause: 's1: The hook is weak. The cta has two actions.', data: rejection },
+    { taskId: 'scripts', action: 'escalate', result: 'escalated', cause: 'the backup model also failed' },
+    { taskId: null, action: 'end', result: 'escalated' },
+  ]);
+  // A rejection has a verdict, a score and a list of issues.
+  expect(store.events(runId).filter((e) => e.action === 'review').map((e) => (e.data as typeof rejection).reviews[0])).toEqual(Array(4).fill(rejection.reviews[0]));
+  expect(store.events(runId).some((e) => e.taskId === 'schedule')).toBe(false);
+});
+
+test('the stuck reason names the rejection and its main issue, and what the conductor does about it', async () => {
+  const tuloy = testTuloy({ script: { reviewer: [rejection, rejection, rejection, rejection] }, backupScript: {} });
+  const { conductor, store } = tuloy;
+  /** The stuck reason and shown status of the script task, read at each recovery event. */
+  const seen: (string | null)[][] = [];
+  store.subscribe((e) => {
+    if (e.taskId !== 'scripts' || !['retry', 'reroute', 'dispatch', 'escalate'].includes(e.action)) return;
+    const view = taskViews(store.tasks(e.runId), store.events(e.runId)).find((t) => t.id === 'scripts')!;
+    seen.push([`${e.action} ${e.result}`, view.shownStatus, view.stuckReason]);
+  });
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(seen).toEqual([
+    ['dispatch started', 'running', null],
+    ['retry waiting', 'stalled', 'Script task rejected by the reviewer: The hook is weak. Retry 1 of 2 in 2s.'],
+    ['dispatch started', 'recovering', 'Script task rejected by the reviewer: The hook is weak. Retry 1 of 2 is running.'],
+    ['retry waiting', 'stalled', 'Script task rejected by the reviewer: The hook is weak. Retry 2 of 2 in 4s.'],
+    ['dispatch started', 'recovering', 'Script task rejected by the reviewer: The hook is weak. Retry 2 of 2 is running.'],
+    ['reroute backup model', 'stalled', 'Script task rejected by the reviewer: The hook is weak. Re-routed to backup model after 2 of 2 retries used.'],
+    ['dispatch started', 'recovering', 'Script task rejected by the reviewer: The hook is weak. Re-routed to backup model after 2 of 2 retries used.'],
+    ['escalate escalated', 'stalled', 'Script task rejected by the reviewer: The hook is weak. The backup model also failed. The run ended as escalated.'],
+  ]);
+  expect(taskViews(store.tasks(runId), store.events(runId)).find((t) => t.id === 'scripts')).toMatchObject({
+    shownStatus: 'escalated',
+    stuckReason: 'Script task rejected by the reviewer: The hook is weak. The backup model also failed. The run ended as escalated.',
+  });
+});
+
+test('the recovery policy gives a reviewer rejection the same order as any failure of the script task: retry, backup model, escalated', () => {
+  const limits = { retries: 2, retryWaitMs: 2000 };
+  const rejected: Failure = { kind: 'reviewer_rejection', detail: 's1: The hook is weak.' };
+  const junk: Failure = { kind: 'invalid_output', detail: 'x' };
+
+  expect(nextAction(rejected, [], limits)).toEqual({ do: 'retry', retry: 1, of: 2, waitMs: 2000 });
+  expect(nextAction(rejected, [junk], limits)).toEqual({ do: 'retry', retry: 2, of: 2, waitMs: 4000 });
+  expect(nextAction(rejected, [junk, rejected], limits)).toEqual({ do: 'backup', cause: '2 of 2 retries used' });
+  expect(nextAction({ ...rejected, onBackup: true }, [junk, rejected, rejected], limits)).toEqual({ do: 'escalate', cause: 'the backup model also failed' });
+});
+
+test('demo mode: an injected reviewer rejection sends the script back one time, with no call to the reviewer model for it', async () => {
+  const tuloy = testTuloy();
+  const server = createServer({ store: tuloy.store, conductor: tuloy.conductor, owner: 'Lou', demo: true });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const posted = await fetch(`${url}/api/injections`, { method: 'POST', body: JSON.stringify({ task: 'script', kind: 'reviewer_rejection' }) });
+    expect(posted.status).toBe(201);
+    expect(await posted.json()).toMatchObject({ task: 'script', kind: 'reviewer_rejection' });
+
+    const { runId, ended } = tuloy.conductor.startRun(SAMPLE_GOAL);
+    await ended;
+
+    expect(tuloy.store.run(runId)?.status).toBe('done');
+    expect(trail(tuloy, runId, 'scripts')).toEqual([
+      'assign script',
+      'handoff checked content stored',
+      'dispatch started',
+      'injection reviewer_rejection',
+      'validate valid',
+      'review rejected',
+      'retry waiting',
+      'handoff checked content stored',
+      'dispatch started',
+      'validate valid',
+      'review pass',
+    ]);
+    // The injected rejection is a full rejection: verdict, score, issues, hints. The script agent gets it as input.
+    const review = tuloy.store.events(runId).find((e) => e.action === 'review')!;
+    expect((review.data as typeof rejection).reviews[0]).toEqual({ script_id: 's1', verdict: 'reject', score: 2, issues: ['Demo: the presenter injected this rejection.'], hints: ['Write the script again.'] });
+    const scriptCalls = tuloy.model.calls.filter((c) => c.role === 'script').map((c) => JSON.parse(c.prompt));
+    expect(scriptCalls[1].reviewer_hints).toEqual([{ script_id: 's1', issues: ['Demo: the presenter injected this rejection.'], hints: ['Write the script again.'] }]);
+    expect(tuloy.model.calls.filter((c) => c.role === 'reviewer')).toHaveLength(1);
+    expect(await (await fetch(`${url}/api/injections`)).json()).toEqual({ demo: true, injections: [] });
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test('after a restart in the middle of the rewrite, the rejection still counts as a failure and the hints are still in the input', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
+  // The program dies when the script agent starts its second attempt, the one after the rejection.
+  const before = testTuloy({ file, script: { reviewer: [rejection] } });
+  let starts = 0;
+  before.store.subscribe((e) => {
+    if (e.taskId === 'scripts' && e.action === 'dispatch' && ++starts === 2) before.store.close();
+  });
+  const { runId, ended } = before.conductor.startRun(SAMPLE_GOAL);
+  await ended.catch(() => {});
+
+  const tuloy = testTuloy({ file });
+  await Promise.all(tuloy.conductor.continueRuns().map((c) => c.ended));
+
+  expect(tuloy.store.run(runId)?.status).toBe('done');
+  // The rejection used retry 1; the stop uses retry 2.
+  expect(tuloy.store.events(runId).filter((e) => e.action === 'retry').map((e) => [e.cause, (e.data as { retry: number }).retry])).toEqual([
+    ['reviewer_rejection', 1],
+    ['missed_heartbeat', 2],
+  ]);
+  expect(tuloy.model.calls.map((c) => [c.role, 'reviewer_hints' in JSON.parse(c.prompt)])).toEqual([
+    ['script', true],
+    ['reviewer', false],
+    ['scheduler', false],
+  ]);
+});
+
+// ---- Review fix 2: a script is scheduled only after an explicit pass ----
+
+/** The reviewer passes s1 and says nothing of s2. */
+const noReviewOfS2 = { reviews: [{ script_id: 's1', verdict: 'pass', score: 8, issues: [], hints: [] }] };
+
+test('a script with no review is not scheduled: the review is a bad output of the reviewer, and the scheduler starts only after every script has a pass', async () => {
+  const tuloy = testTuloy({ script: { reviewer: [noReviewOfS2] } });
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(trail(tuloy, runId, 'review')).toEqual(['assign reviewer', 'handoff checked content stored', 'dispatch started', 'validate invalid_output', 'retry waiting', 'dispatch started', 'validate valid']);
+  const events = store.events(runId);
+  expect(events.find((e) => e.taskId === 'review' && e.result === 'invalid_output')!.cause).toBe('The output has no review of script s2.');
+  const pass = events.find((e) => e.action === 'review' && e.result === 'pass')!;
+  expect(events.filter((e) => e.taskId === 'schedule').every((e) => e.seq > pass.seq)).toBe(true);
+});
+
+test('when the reviewer never reviews every script, nothing is scheduled and the run ends as escalated', async () => {
+  const tuloy = testTuloy({ script: { reviewer: [noReviewOfS2, noReviewOfS2, noReviewOfS2] } });
+  const { conductor, store } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('escalated');
+  expect(trail(tuloy, runId, 'schedule')).toEqual([]);
+  expect(store.events(runId).some((e) => e.action === 'review' && e.result === 'pass')).toBe(false);
+});
+
+test('a stop in the middle of the writes of a rejection cannot let the scheduler start: after the restart the script is still not scheduled before a pass', async () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'tuloy-')), 'tuloy.sqlite');
+  const before = testTuloy({ file, script: { reviewer: [rejection] } });
+  // The stop: the program dies after the rejection event is written, at the write of the status `rejected` of the script task.
+  const write = before.store.updateTask;
+  before.store.updateTask = (run, task, patch) => {
+    if (patch.status === 'rejected') before.store.close();
+    write(run, task, patch);
+  };
+  const { runId, ended } = before.conductor.startRun(SAMPLE_GOAL);
+  await ended.catch(() => {});
+
+  const tuloy = testTuloy({ file, script: { reviewer: [rejection] } });
+  const { conductor, store } = tuloy;
+  // The reviewer task is not done with a rejection that was never written.
+  expect(store.tasks(runId).find((t) => t.id === 'review')!.status).not.toBe('done');
+  await conductor.continueRuns()[0].ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  const events = store.events(runId);
+  const pass = events.find((e) => e.action === 'review' && e.result === 'pass')!;
+  expect(events.some((e) => e.action === 'review' && e.result === 'rejected')).toBe(true);
+  expect(events.filter((e) => e.taskId === 'schedule').every((e) => e.seq > pass.seq)).toBe(true);
+});

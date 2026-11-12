@@ -1,0 +1,37 @@
+{
+  "case": "hand-written: a real outside agent can put its reply in artifacts; the test partner never does",
+  "exchanges": [
+    {
+      "request": { "body": { "method": "GetTask" } },
+      "status": 200,
+      "response": {
+        "result": {
+          "id": "task-artifact",
+          "contextId": "context-artifact",
+          "status": {
+            "state": "TASK_STATE_COMPLETED",
+            "message": {
+              "messageId": "status-1",
+              "role": "ROLE_AGENT",
+              "parts": [{ "text": "The times are in the artifact." }]
+            }
+          },
+          "artifacts": [
+            {
+              "artifactId": "artifact-1",
+              "parts": [
+                { "text": "Free times: Friday 09:00." },
+                { "url": "https://partner.example/times.ics" },
+                { "url": "javascript:alert(1)" },
+                { "raw": "aGVsbG8=", "filename": "times.ics" },
+                { "data": { "free": ["Friday"] } }
+              ]
+            }
+          ]
+        },
+        "id": 1,
+        "jsonrpc": "2.0"
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "case": "wrong-key",
+  "exchanges": [
+    {
+      "request": {
+        "headers": {
+          "A2A-Version": "1.0",
+          "Authorization": "Bearer [redacted]"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "SendMessage",
+          "params": {
+            "message": {
+              "messageId": "message-wrong-key-1",
+              "role": "ROLE_USER",
+              "parts": [
+                {
+                  "text": "times"
+                }
+              ]
+            },
+            "configuration": {
+              "returnImmediately": true
+            }
+          }
+        }
+      },
+      "status": 401,
+      "response": {
+        "error": "unauthorized"
+      }
+    }
+  ]
+}
