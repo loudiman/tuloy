@@ -7,7 +7,7 @@ import { createStreet } from './street.ts';
 import type { Trip } from '../trip-view.ts';
 import { duration, headerOf, manilaTime, shownStatus, timelineOf, type EventView, type RunView, type TaskView } from './view.ts';
 
-type RunList = { owner: string; demo?: boolean; sampleGoal: string; runs: RunView[] };
+type RunList = { owner: string; demo?: boolean; sampleGoal: string; peers?: string[]; runs: RunView[] };
 type RunDetail = { run: RunView; tasks: TaskView[]; events: EventView[]; recovery?: { kind: string; text: string }[]; trip?: Trip };
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -264,9 +264,12 @@ type Script = { id?: string; hook?: string; body?: string; cta?: string; languag
 type Post = { script_id?: string; platform?: string; time?: string; reason?: string };
 type Review = { script_id?: string; verdict?: string };
 
+let foldKey = '';
 function drawResult() {
   const result = $('result');
+  const fold = $('result-fold') as HTMLDetailsElement;
   result.className = 'result';
+  fold.hidden = !detail;
   if (!detail) return result.replaceChildren();
   const { run, tasks, events } = detail;
   // When a peer did the full goal, the one task with role `goal` holds the scripts and the schedule.
@@ -344,6 +347,9 @@ function drawResult() {
     );
   }
   result.replaceChildren(...parts);
+  // The result stays folded while the run goes on, and opens when the run ends. The owner can open and fold it at all times.
+  const ended = run.status === 'done' || run.status === 'escalated';
+  if (foldKey !== `${run.id}:${ended}`) (fold.open = ended), (foldKey = `${run.id}:${ended}`);
 }
 
 function drawRuns() {
@@ -418,7 +424,15 @@ function shedMenu(role: string, x: number, y: number) {
   menu.style.left = `${Math.min(x, innerWidth - menu.offsetWidth - 12) + scrollX}px`;
   menu.style.top = `${Math.min(y, innerHeight - menu.offsetHeight - 12) + scrollY}px`;
 }
-const street = createStreet($('street'), { say, onShed: shedMenu });
+/** In a wide window the panels lie on the street: the bars at the top and the bottom, and the column on the right. */
+function inset() {
+  if (!matchMedia('(min-width: 901px)').matches) return { top: 0, right: 0, bottom: 0, left: 0 };
+  const view = $('street').getBoundingClientRect();
+  const side = document.querySelector('.side')!.getBoundingClientRect();
+  const mid = document.querySelector('.stage-mid')!.getBoundingClientRect();
+  return { top: mid.top - view.top, right: view.right - side.left, bottom: view.bottom - mid.bottom, left: 0 };
+}
+const street = createStreet($('street'), { say, onShed: shedMenu, inset });
 $('street-off').hidden = street !== null;
 $('street').hidden = street === null;
 addEventListener('pointerdown', (event) => {
@@ -435,7 +449,7 @@ $('run-pick').addEventListener('change', () => (location.hash = link(Number(($('
 function drawStreet() {
   if (!detail?.trip || !list) return say(list && !list.runs.length ? 'Give a goal. The jeepney carries the work from agent to agent.' : '');
   if (!detail.trip.steps.length) say('The run starts.');
-  street?.show(String(detail.run.id), detail.trip, { owner: list.owner });
+  street?.show(String(detail.run.id), detail.trip, { owner: list.owner, peers: list.peers });
 }
 
 /** The recovery summary: what went wrong and what the conductor did, in order. */

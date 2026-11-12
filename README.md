@@ -7,9 +7,15 @@ Tuloy ("keep going") runs a team of AI agents toward a goal and recovers by itse
 
 ## The Runs page
 
-The Runs page shows a run as a trip on a 3D street. Your route is the far road and a peer's route is the near road. Each agent is a robot at a waiting shed, and a jeepney carries the work from stop to stop. A blocked stop gets a road sign with the stuck reason. When the conductor re-routes a task to a peer, the jeepney goes to the peer's road.
+The Runs page shows a run as a trip on a 3D street. Your route is the far road. Each peer on your allowed list has its own road, nearer to you. Each agent is a robot at a waiting shed, and a jeepney carries the work from stop to stop. A blocked stop gets a road sign with the stuck reason. When the conductor re-routes a task to a peer, the jeepney goes to the peer's road.
 
-![The run ended as done after a re-route to a peer](docs/screenshots/3d-4-done.png)
+The street fills the window. The other parts lie on top of it: the run, the list "What the conductor did" and the result are in a column on the right, and the sentence at the bottom left says what happens now. Each panel of the column folds: a click on its title closes it or opens it. The result is folded during a run and opens when the run ends. The details (tasks, event trail, past runs) are below the street: scroll down. In a narrow window the parts are below the street.
+
+![The run ended as done after a re-route to a peer](docs/screenshots/3d-5-full-window.png)
+
+With two peers, the street has three roads. Here the first peer refused the task, and the second peer did it (scripted model, not a real model):
+
+![Three roads: the owner and two peers](docs/screenshots/3d-7-three-roads.png)
 
 - Drag to turn the street. Hold ⌘ or Ctrl and scroll to zoom. **Reset the view** puts it back, and **Follow the jeepney** moves the view with the jeepney.
 - **Replay the trip** plays an ended run from its start.

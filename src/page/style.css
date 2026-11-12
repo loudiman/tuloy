@@ -378,7 +378,7 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
   --st-panel: #f6f7f4; --st-ink: #1b1e23; --st-white: #f6f7f4; --st-route: #1f4fd8; --st-peer: #0b7a75; --st-backup: #8093b5;
   --st-block: #d3212f; --st-sign: #ffcf33; --st-on-sign: #1b1e23; --st-road: #3b4049; --st-roadline: #f6f7f4; --st-steel: #c3c9d2; --st-glass: #2a2f37; --st-ground: #e7eae4;
 }
-.mark, .slate h1, .street-say, .did h2, .result > h2, .details > summary, .street-tools button, .shed-menu p {
+.mark, .slate h1, .street-say, .did h2, .result > h2, .details > summary, .fold > summary, .street-tools button, .shed-menu p {
   font-family: var(--sign-face);
   font-weight: 800;
   font-stretch: normal;
@@ -397,7 +397,6 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
 .slate .fields { margin-top: 0.6rem; padding-top: 0.5rem; }
 .slate .field dd { font-size: 1.05rem; }
 
-.street-card { position: relative; background: var(--sheet); border: 3px solid var(--ink); display: grid; }
 .street-say { font-size: clamp(1.4rem, 2.6vw, 2.2rem); line-height: 1.04; padding: 0.7rem 1.1rem 0; min-height: 2.9em; text-wrap: balance; }
 .street-say.say-trouble { color: var(--stop); }
 .street-say.say-recovery { color: var(--peer); }
@@ -410,17 +409,12 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
 .street-tools button:first-child { background: var(--warn-fill); }
 .street-tools label { font-weight: 600; display: flex; align-items: center; gap: 0.35rem; }
 .street-hint { margin-left: auto; color: var(--soft); font-size: 0.9rem; }
-.street-card .demo-note, .street-card .demo-pending { padding: 0 1.1rem; }
-.street-card .demo-note:not(:empty) { padding-bottom: 0.5rem; font-weight: 600; }
-.street-card #demo-clear { justify-self: start; margin: 0 1.1rem 0.7rem; }
 .shed-menu { position: absolute; z-index: 20; display: grid; gap: 0.3rem; padding: 0.7rem; background: var(--warn-fill); border: 3px solid var(--ink); width: 15rem; }
 .shed-menu p { font-size: 1.2rem; line-height: 1; margin-bottom: 0.2rem; }
 .shed-menu button { font: 600 0.95rem var(--text); text-align: left; }
 .shed-menu button:hover { background: var(--ink); color: var(--sheet); }
 body > .shed-menu, .shed-menu { position: absolute; }
 
-.after { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1.4rem; align-items: start; }
-.did { background: var(--sheet); border: 3px solid var(--ink); padding: 0.9rem 1.1rem 1.1rem; }
 .did h2, .result > h2 { font-size: 1.5rem; color: var(--ink); margin-bottom: 0.5rem; }
 .did ol { list-style: decimal; padding-left: 1.5rem; line-height: 1.45; }
 .did li.recovery-trouble { color: var(--stop); font-weight: 600; }
@@ -429,7 +423,7 @@ body > .shed-menu, .shed-menu { position: absolute; }
 .details { border: 3px dashed var(--ink); padding: 0.6rem 1.1rem; }
 .details > summary { cursor: pointer; font-size: 1.2rem; }
 .details[open] > summary { margin-bottom: 1rem; }
-@media (max-width: 900px) { .after { grid-template-columns: minmax(0, 1fr); } .street-hint { margin-left: 0; } }
+@media (max-width: 900px) { .street-hint { margin-left: 0; } }
 
 /* The run header is light now: its links and status words use ink, not the colours for a dark slate. */
 .slate a, .slate .field-stuck.is-stuck dd a { color: var(--stop); }
@@ -455,3 +449,60 @@ body > .shed-menu, .shed-menu { position: absolute; }
 .bar { gap: 0.8rem; }
 .bar .mark { margin-right: auto; }
 .bar .pick { margin-left: 0; }
+
+/*
+ * ---- the stage: the street fills the window, the other parts lie on top of it ----
+ * In a narrow window the parts are a plain column: the street, then the panels below it.
+ */
+.stage { display: grid; gap: 1rem; padding: 0 0 1rem; }
+.stage > .street { border-block: 3px solid var(--ink); }
+.stage > .street-tools { order: 1; background: var(--sheet); border-bottom: 3px solid var(--ink); margin-top: -1rem; }
+.stage-mid { order: 2; display: grid; gap: 1rem; padding: 0 clamp(1rem, 2.2vw, 2.2rem); }
+.caption { display: grid; gap: 0.5rem; justify-items: start; }
+.street-say { background: var(--sheet); border: 3px solid var(--ink); padding: 0.45rem 0.9rem 0.5rem; min-height: 0; }
+.street-say:empty { display: none; }
+.caption .demo-note, .caption .demo-pending { margin: 0; padding: 0.4rem 0.7rem; background: var(--sheet); border: 2px solid var(--ink); border-left-width: 6px; }
+.caption #demo-clear { margin: 0; }
+.side { display: grid; gap: 0.8rem; align-content: start; }
+.side .slate { min-height: 0; padding: 0; border: 0; background: none; }
+.side .slate-top { flex-wrap: wrap-reverse; gap: 0.4rem 1rem; }
+.side .slate h1 { font-size: 1.2rem; }
+.side .slate-state .status { font-size: 1rem; }
+.side .slate .label { margin-bottom: 0.15rem; font-size: 0.75rem; }
+.side .slate .fields { margin-top: 0.4rem; padding-top: 0.35rem; }
+.side .slate .field dt { font-size: 0.7rem; margin: 0; }
+.side .slate-note { font-size: 1.5rem; padding-top: 0; }
+.side .slate-help { font-size: 1rem; padding-bottom: 0; }
+.side .slate .fields { gap: 0.2rem 1.4rem; }
+.side .slate .field dd { font-size: 0.85rem; }
+/* Each panel of the column folds: a click on its title closes it and gives the room to the street. */
+.fold { margin: 0; background: var(--sheet); border: 3px solid var(--ink); padding: 0.6rem 1.1rem; }
+.fold > summary { font-size: 1.5rem; color: var(--ink); width: auto; }
+.fold[open] > summary { margin-bottom: 0.5rem; }
+.result-fold .result > h2 { display: none; }
+.result-fold .result h3:first-of-type { margin-top: 0; }
+.result-fold .post { grid-template-columns: 1fr; }
+.result-fold .scripts { grid-template-columns: 1fr; }
+.result-fold .hook { font-size: 1.3rem; }
+.result-fold .body, .result-fold .cta { font-size: 1rem; }
+
+@media (min-width: 901px) {
+  .stage { position: relative; height: 100dvh; min-height: 38rem; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 0; padding: 0; overflow: hidden; }
+  .stage > * { position: relative; z-index: 1; order: 0; }
+  .stage > .street { position: absolute; inset: 0; z-index: 0; aspect-ratio: auto; min-height: 0; height: 100%; border: 0; }
+  .stage > .bar { background: var(--sheet); border-bottom: 3px solid var(--ink); }
+  .stage > .starter { margin: 0; border: 0; border-bottom: 3px solid var(--ink); border-radius: 0; padding-inline: clamp(1rem, 2.2vw, 2.2rem); }
+  .stage > .street-tools { margin: 0; border-bottom: 0; padding-inline: clamp(1rem, 2.2vw, 2.2rem); }
+  /* The open parts of the middle let a drag and a click go through to the street. */
+  .stage-mid { grid-template-columns: minmax(0, 1fr) clamp(21rem, 29vw, 27rem); padding-block: 0.9rem; min-height: 0; pointer-events: none; }
+  .caption, .side { pointer-events: none; min-height: 0; }
+  .caption > *, .side > * { pointer-events: auto; }
+  .caption { align-self: end; max-width: 38rem; }
+  .side { display: flex; flex-direction: column; }
+  .side > * { flex: 0 1 auto; overflow: auto; }
+  .side > .fold { flex-shrink: 0; }
+  .side > .did[open] { flex-shrink: 1; min-height: 6.5rem; }
+  .side:has(.result-fold[open]) .did[open] { max-height: 26%; }
+  .result-fold[open] { flex: 1 1 0; min-height: 6rem; }
+  main { padding-top: 1.4rem; }
+}
