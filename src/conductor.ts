@@ -2,7 +2,7 @@ import type { LanguageModel } from 'ai';
 import type { z } from 'zod';
 import { runAgent, type AgentResult, type Outside } from './agent-runner.ts';
 import type { Clock } from './clock.ts';
-import { peerAgentName, runPeerAgent } from './peer-agent.ts';
+import { peerAgentName, runPeerAgent, type PeerProgress } from './peer-agent.ts';
 import { createPeerClient, type A2aClient } from './peer-client.ts';
 import { planTaskGraph } from './planner.ts';
 import { nextAction, type Failure } from './recovery-policy.ts';
@@ -212,6 +212,18 @@ export function createConductor({
       // The time limit starts when the agent has its slot, not while it waits in line.
       // No heartbeat is written for a run that ended while the agent worked (a cancel).
       const heartbeat = (cause: string) => () => void (store.run(runId)?.status === 'running' && store.append({ runId, taskId, action: 'heartbeat', cause, result: 'alive' }));
+      // The progress of a peer's Tuloy: one event for each of its agents that starts, finishes or has a problem. It is outside data, checked before it gets here.
+      const peerStates = new Map<string, string>();
+      const peerProgress = (progress: PeerProgress) => {
+        for (const { role, state } of progress) {
+          if (peerStates.get(role) === state) continue;
+          peerStates.set(role, state);
+          if (state === 'waiting' || store.run(runId)?.status !== 'running') continue;
+          const name = role.replace('_', ' ');
+          const did = state === 'working' ? 'started' : state === 'done' ? 'finished' : 'has a problem with';
+          store.append({ runId, taskId, action: 'peer_progress', cause: `${peer!.name}'s ${name} agent ${did} the ${name} task`, result: state, data: { peer: peer!.name, role, state } });
+        }
+      };
       let result: AgentResult = stopped
         ? { ok: false as const, failure: stopped }
         : peer || task.role === 'goal'
@@ -221,6 +233,7 @@ export function createConductor({
               limits: task.role === 'goal' ? { ...limits, taskTimeLimitMs: limits.taskTimeLimitMs * planTaskGraph(run.goal).length } : limits,
               injected,
               onHeartbeat: heartbeat(`${peer!.name}'s Tuloy answered: the task is in work`),
+              onProgress: peerProgress,
             })
           : await withModelSlot(async () =>
               // The run can end while the agent waits in line (a cancel): then no model call starts.
@@ -238,6 +251,8 @@ export function createConductor({
         if (noReview.length) result = { ok: false, failure: { kind: 'invalid_output', detail: `The output has no review of script ${noReview.map((s) => s.id).join(', ')}.` } };
       }
       if (result.ok) {
+        // The checked result is the proof that each agent that the peer named is done: the last poll can come before its last progress.
+        peerProgress([...peerStates.keys()].map((role) => ({ role: role as PeerProgress[number]['role'], state: 'done' })));
         output = result.output;
         break;
       }
@@ -267,7 +282,8 @@ export function createConductor({
         const paths = [
           `the own ${task.role.replace('_', ' ')} agent`,
           ...(retries ? [`${retries} ${retries === 1 ? 'retry' : 'retries'}`] : []),
-          ...tried.filter((e) => e.action === 'reroute').map((e) => (e.result === 'backup model' ? 'the backup model' : e.result)),
+          // A peer that got the task two times (a rejected script went back to it) is one path.
+          ...new Set(tried.filter((e) => e.action === 'reroute').map((e) => (e.result === 'backup model' ? 'the backup model' : e.result))),
         ];
         store.append({ runId, taskId, action: 'goal_to_peer', cause: action.cause, result: to.name, data: { ...action, peer: to.name, tried: paths } });
         store.updateTask(runId, taskId, { status: 'escalated' });
@@ -281,8 +297,10 @@ export function createConductor({
         model = 'backup';
       } else if (action.do === 'peer') {
         // Step 3: the same checked input goes to the same agent of a peer: the first peer of the allowed list that this task did not ask yet.
+        // A script that the reviewer rejected goes back to the peer that wrote it, with the reviewer's hints in the input.
         const asked = store.events(runId).flatMap((e) => (e.taskId === taskId && e.action === 'reroute' ? [(e.data as { peer?: string } | null)?.peer] : []));
-        peer = store.peers().find((p) => !asked.includes(p.name)) ?? store.peers()[0]!;
+        const wrote = failure.kind === 'reviewer_rejection' ? store.peers().find((p) => p.name === asked.findLast(Boolean)) : undefined;
+        peer = wrote ?? store.peers().find((p) => !asked.includes(p.name)) ?? store.peers()[0]!;
         model = 'peer';
         const agent = peerAgentName(peer, task.role);
         store.append({ runId, taskId, action: 'reroute', cause: action.cause, result: agent, data: { ...action, peer: peer.name } });

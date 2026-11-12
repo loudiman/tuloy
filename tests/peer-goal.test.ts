@@ -26,7 +26,6 @@ test.each([
   ['a peer that refuses or fails: the full goal goes to a peer', fail('peer_failed', { onPeer: true }), earlier, own, goal],
   ['a silent peer: the full goal goes to a peer', fail('timeout', { onPeer: true }), earlier, own, goal],
   ['a bad payload from a peer: the full goal goes to a peer', fail('invalid_output', { onPeer: true }), earlier, own, goal],
-  ["a peer's script that the own reviewer rejects: the full goal goes to a peer", fail('reviewer_rejection', { onPeer: true }), earlier, own, goal],
   ['the full goal is given one time: when that fails, the run is escalated', fail('peer_failed', { onPeer: true, onGoal: true }), [], own, escalate('every path failed')],
   ['a goal that came from a peer is never given to another peer', fail('peer_failed', { onPeer: true }), earlier, { forPeer: true, peers: 1 }, escalate('the re-route to a peer failed')],
   ['with an empty allowed list the goal step has nobody to ask', fail('peer_failed', { onPeer: true }), earlier, { forPeer: false, peers: 0 }, escalate('the re-route to a peer failed')],
@@ -114,9 +113,9 @@ test('the retries that were used are one of the paths in the stuck reason', asyn
   );
 });
 
-test("a script from a peer that the own reviewer rejects is not written again: the full goal goes to the peer", async () => {
+test("a script from a peer that the own reviewer rejects two times: the full goal goes to the peer, and the cause says why", async () => {
   const rejected = { reviews: [{ script_id: 's1', verdict: 'reject', score: 3, issues: ['The hook does not name the store.'], hints: ['Name the store.'] }, { script_id: 's2', verdict: 'pass', score: 8, issues: [], hints: [] }] };
-  const tuloy = ownModelsDown({ script: { script: [down()], reviewer: [rejected] }, peer: [result(goodOutput.script), result(goalOutput)] });
+  const tuloy = ownModelsDown({ script: { script: [down()], reviewer: [rejected, rejected] }, peer: [result(goodOutput.script), result(goodOutput.script), result(goalOutput)] });
   const { conductor, store } = tuloy;
 
   const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
@@ -124,8 +123,20 @@ test("a script from a peer that the own reviewer rejects is not written again: t
 
   expect(store.run(runId)?.status).toBe('done');
   expect(store.tasks(runId)).toMatchObject([{ id: 'goal', status: 'done', output: goalOutput }]);
-  expect(lines(tuloy, runId, (e) => e.taskId === 'scripts').slice(-3)).toEqual(['validate valid', 'review rejected', 'goal_to_peer Maria']);
-  expect(sends(tuloy).map((s) => s.skill)).toEqual(['script', 'goal']);
+  expect(lines(tuloy, runId, (e) => e.taskId === 'scripts' && ['reroute', 'review', 'goal_to_peer'].includes(e.action))).toEqual([
+    'reroute backup model',
+    "reroute Maria's script agent",
+    'review rejected',
+    "reroute Maria's script agent",
+    'review rejected',
+    'goal_to_peer Maria',
+  ]);
+  // The peer wrote the script two times. That is one path, and the cause is the rejection, not a failed re-route.
+  expect(store.events(runId).find((e) => e.action === 'goal_to_peer')).toMatchObject({
+    cause: "the reviewer rejected the peer's script again",
+    data: { tried: ['the own script agent', 'the backup model', "Maria's script agent"] },
+  });
+  expect(sends(tuloy).map((s) => s.skill)).toEqual(['script', 'script', 'goal']);
 });
 
 test('with no peer on the allowed list the goal is given to nobody, and the run ends as escalated as before', async () => {

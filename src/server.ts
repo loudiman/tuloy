@@ -8,7 +8,8 @@ import { createPeerServer } from './peer-server.ts';
 import { SAMPLE_GOAL } from './planner.ts';
 import { skills, type Skill } from './schemas.ts';
 import type { Store } from './store.ts';
-import { taskViews } from './task-view.ts';
+import { recoverySummary, taskViews } from './task-view.ts';
+import { tripOf } from './trip-view.ts';
 
 /** The injection kinds that are built. The other kinds of the shared contract answer 400 until their ticket builds them. */
 const injectionKinds = ['timeout', 'invalid_output', 'reviewer_rejection', 'primary_outage', 'all_models_outage', 'peer_silent', 'peer_refuses'];
@@ -21,6 +22,13 @@ const pageFiles: Record<string, { file: URL; type: string }> = {
   '/page/style.css': { file: file('./page/style.css'), type: 'text/css; charset=utf-8' },
   '/page/app.ts': { file: file('./page/app.ts'), type: 'text/javascript; charset=utf-8' },
   '/page/view.ts': { file: file('./page/view.ts'), type: 'text/javascript; charset=utf-8' },
+  '/page/theme.ts': { file: file('./page/theme.ts'), type: 'text/javascript; charset=utf-8' },
+  '/page/street.ts': { file: file('./page/street.ts'), type: 'text/javascript; charset=utf-8' },
+  // The 3D library comes from the repo's own packages, so the page needs no internet.
+  '/vendor/three.module.js': { file: file('../node_modules/three/build/three.module.js'), type: 'text/javascript; charset=utf-8' },
+  '/vendor/three.core.js': { file: file('../node_modules/three/build/three.core.js'), type: 'text/javascript; charset=utf-8' },
+  '/vendor/OrbitControls.js': { file: file('../node_modules/three/examples/jsm/controls/OrbitControls.js'), type: 'text/javascript; charset=utf-8' },
+  '/fonts/barlow-condensed.woff2': { file: file('../node_modules/@fontsource/barlow-condensed/files/barlow-condensed-latin-800-normal.woff2'), type: 'font/woff2' },
   '/fonts/archivo.woff2': { file: font('archivo/files/archivo-latin-standard-normal.woff2'), type: 'font/woff2' },
   '/fonts/martian-mono.woff2': { file: font('martian-mono/files/martian-mono-latin-wght-normal.woff2'), type: 'font/woff2' },
 };
@@ -84,7 +92,10 @@ export function createServer({
     if (req.method === 'GET' && runId) {
       const run = store.run(runId);
       const events = store.events(runId);
-      return run ? json(200, { run, tasks: taskViews(store.tasks(runId), events), events }) : json(404, { error: 'no such run' });
+      if (!run) return json(404, { error: 'no such run' });
+      // The trip shows the stops of the first task graph also after the full goal went to a peer (version 2).
+      const trip = tripOf(run, [...store.tasks(runId, 1), ...store.tasks(runId)], events);
+      return json(200, { run, tasks: taskViews(store.tasks(runId), events), events, recovery: recoverySummary(events), trip });
     }
     // Injection exists only in demo mode. `task` is an agent role; the default is the script task.
     if (demo && req.method === 'GET' && path === '/api/injections') return json(200, { demo: true, injections: store.injections() });

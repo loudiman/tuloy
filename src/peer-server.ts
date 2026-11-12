@@ -5,8 +5,9 @@ import { AgentEvent, type AgentExecutor, DefaultRequestHandler, InMemoryTaskStor
 import { z } from 'zod';
 import { createAllowedList, readJson } from './allowed-list.ts';
 import type { Conductor } from './conductor.ts';
+import { PROGRESS_KEY, type PeerProgress } from './peer-agent.ts';
 import { skills, type Skill } from './schemas.ts';
-import type { Store } from './store.ts';
+import type { Store, TaskStatus } from './store.ts';
 
 const skillNames = Object.keys(skills) as [Skill, ...Skill[]];
 
@@ -21,6 +22,10 @@ const skillWords: Record<Skill, string> = {
 /** What a peer sends, as the JSON text of one A2A message. The result comes back as the JSON text of one artifact. */
 const peerMessage = z.object({ skill: z.enum(skillNames), input: z.unknown() });
 const HOW_TO_SEND = 'Send JSON text: { "skill": "<skill id>", "input": { ... } }. The agent card lists the skills: one for each agent role, and "goal" for a full goal.';
+
+/** What a peer may know of a task of the run that this Tuloy does for it: only which agent works and which are done. */
+const progressState = (status: TaskStatus): PeerProgress[number]['state'] =>
+  status === 'done' ? 'done' : status === 'queued' || status === 'waiting_on_dependency' ? 'waiting' : status === 'running' || status === 'recovering' ? 'working' : 'blocked';
 
 const digest = (key: string) => createHash('sha256').update(key).digest();
 
@@ -75,12 +80,30 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour, al
       begin('TASK_STATE_WORKING');
       const update = (state: keyof typeof TaskState, words?: string) =>
         bus.publish(AgentEvent.statusUpdate({ ...ids, status: Task.fromJSON({ status: status(state, words) }).status, metadata: undefined }));
+      /**
+       * While the run for the peer is in work, each change of its tasks goes into the working status as JSON text:
+       * the role and the state of each task, and nothing else (no output, no reason, no model).
+       */
+      const follow = (runId: number) => {
+        let sent = '';
+        const tell = () => {
+          if (!inWork.has(ids.taskId) || store.run(runId)?.status !== 'running') return;
+          const progress: PeerProgress = store.tasks(runId).flatMap((t) => (t.role === 'goal' ? [] : [{ role: t.role, state: progressState(t.status) }]));
+          const words = JSON.stringify({ [PROGRESS_KEY]: progress });
+          if (words !== sent) update('TASK_STATE_WORKING', (sent = words));
+        };
+        // After the event: the writes of one step (the event, then the task status) are done when the microtask runs.
+        const stop = store.subscribe((e) => e.runId === runId && queueMicrotask(tell));
+        queueMicrotask(tell);
+        return stop;
+      };
       let output: unknown;
       if (role === 'goal') {
         // A full goal starts a run, and the A2A task follows that run. The result is the scripts and the schedule of the run's tasks.
         const { runId, ended } = conductor.startRun(input.data.goal, peer);
         inWork.set(ids.taskId, { runId, contextId: ids.contextId, cancel: `${peer} cancelled the goal` });
-        await ended;
+        const stop = follow(runId);
+        await ended.finally(stop);
         if (stopped(ids.taskId)) return;
         const run = skills.goal.output.safeParse(Object.assign({}, ...store.tasks(runId).map((t) => t.output)));
         if (store.run(runId)?.status !== 'done' || !run.success) return update('TASK_STATE_FAILED', `${owner}'s Tuloy did not finish the goal: the run ended as ${store.run(runId)?.status}.`);
@@ -88,7 +111,8 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour, al
       } else {
         const { runId, ended } = conductor.startPeerTask(peer, role, input.data);
         inWork.set(ids.taskId, { runId, contextId: ids.contextId, cancel: `${peer} cancelled the task` });
-        await ended;
+        const stop = follow(runId);
+        await ended.finally(stop);
         if (stopped(ids.taskId)) return;
         const [task] = store.tasks(runId);
         if (task?.status !== 'done') return update('TASK_STATE_FAILED', `The ${role} agent did not finish the task: ${task?.status}.`);

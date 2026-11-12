@@ -61,8 +61,10 @@ const rerouteToBackup: Step = (failure, history, { retries }) => {
  * Step 3: re-route to the same agent in a peer's Tuloy. It applies when the backup model failed also.
  * When the first peer does not take the task (a fast failure), the next peer on the allowed list is asked: two peers at most.
  * Every other failure with `onPeer` is the result 'the peer step failed': a silent peer is not followed by a second peer.
+ * A script from a peer that the owner's reviewer rejects goes to that peer's script agent one more time, with the reviewer's hints.
  */
 const rerouteToPeer: Step = (failure, history, _limits, { forPeer, peers }) => {
+  if (rejectedPeerScript(failure) && !forPeer && peers > 0 && !history.some(rejectedPeerScript)) return { do: 'peer', cause: "the reviewer rejected the peer's script" };
   const asked = [failure, ...history].filter((f) => f.onPeer).length;
   if (forPeer || failure.onGoal || asked >= Math.min(2, peers) || (asked === 1 && !failure.fast)) return null;
   return { do: 'peer', cause: asked ? 'the first peer did not take the task' : 'the backup model also failed' };
@@ -74,11 +76,16 @@ const rerouteToPeer: Step = (failure, history, _limits, { forPeer, peers }) => {
  */
 const giveGoalToPeer: Step = (failure, history, _limits, { forPeer, peers }) => {
   if (forPeer || peers === 0 || failure.onGoal || !(failure.onPeer || history.some((f) => f.onPeer))) return null;
-  return { do: 'goal', cause: 'the re-route to a peer failed' };
+  return { do: 'goal', cause: peerStepFailed(failure, history) };
 };
 
 /** Step 5: end the run as escalated. It always applies. */
-const escalate: Step = (failure) => ({ do: 'escalate', cause: failure.onGoal ? 'every path failed' : failure.onPeer ? 'the re-route to a peer failed' : 'the backup model also failed' });
+const escalate: Step = (failure, history) => ({ do: 'escalate', cause: failure.onGoal ? 'every path failed' : failure.onPeer ? peerStepFailed(failure, history) : 'the backup model also failed' });
+
+const rejectedPeerScript = (failure: Failure) => failure.kind === 'reviewer_rejection' && failure.onPeer === true;
+/** Why the peer step ended. A rejected script is not a failed re-route: the peer wrote the script, and the reviewer did not pass it. */
+const peerStepFailed = (failure: Failure, history: Failure[]) =>
+  rejectedPeerScript(failure) ? `the reviewer rejected the peer's script${history.some(rejectedPeerScript) ? ' again' : ''}` : 'the re-route to a peer failed';
 
 /** The agreed recovery order. */
 const order: Step[] = [retryOwnAgent, rerouteToBackup, rerouteToPeer, giveGoalToPeer, escalate];

@@ -82,7 +82,7 @@ interface A2aIds {
  */
 export type A2aAnswer = A2aIds &
   (
-    | { status: "progress" }
+    | { status: "progress"; text?: string }
     | { status: "ask" | "result" | "refused"; text: string }
     | { status: "failed"; failure: A2aFailure; text: string }
   );
@@ -251,7 +251,8 @@ function answerOf(reply: Message | Task, key: string): A2aAnswer {
   switch (reply.status?.state) {
     case TaskState.TASK_STATE_SUBMITTED:
     case TaskState.TASK_STATE_WORKING:
-      return { status: "progress", ...ids };
+      // The words of a task in work: a Tuloy puts its progress there.
+      return { status: "progress", ...(text && { text }), ...ids };
     case TaskState.TASK_STATE_INPUT_REQUIRED:
       return {
         status: "ask",

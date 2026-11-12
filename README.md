@@ -5,6 +5,18 @@ Tuloy ("keep going") runs a team of AI agents toward a goal and recovers by itse
 - Install: `pnpm install`. Test: `pnpm test`. Typecheck: `pnpm typecheck`.
 - Start one Tuloy: copy `.env.example` to `.env`, fill in `OPENROUTER_API_KEY`, `TULOY_PRIMARY_MODEL` and `TULOY_BACKUP_MODEL`, then `pnpm start`. The dashboard is at http://localhost:4000.
 
+## The Runs page
+
+The Runs page shows a run as a trip on a 3D street. Your route is the far road and a peer's route is the near road. Each agent is a robot at a waiting shed, and a jeepney carries the work from stop to stop. A blocked stop gets a road sign with the stuck reason. When the conductor re-routes a task to a peer, the jeepney goes to the peer's road.
+
+![The run ended as done after a re-route to a peer](docs/screenshots/3d-4-done.png)
+
+- Drag to turn the street. Hold ⌘ or Ctrl and scroll to zoom. **Reset the view** puts it back, and **Follow the jeepney** moves the view with the jeepney.
+- **Replay the trip** plays an ended run from its start.
+- In demo mode, a click on a shed of your route opens the menu of injections for that agent.
+- The button in the top bar switches between the light theme and the dark theme.
+- The browser must have WebGL. Without it, the page shows the list "What the conductor did" and the result.
+
 ## Run two Tuloys on one laptop
 
 This is the demo path: the owner's own models go down, and the conductor re-routes the script task to a peer. The second Tuloy is a sample owner, not a second person.
@@ -59,4 +71,5 @@ An injection waits until an attempt of that agent uses it, in a run of the owner
 - Tuloy listens on `127.0.0.1` (this machine only). Set `TULOY_HOST` (for example `0.0.0.0`) to serve other machines.
 - The page and its API have no login. Every call to the page, its API and the live events, a read included, is refused with 403 unless its `Host` header is `localhost` or `127.0.0.1` with the port, or the `TULOY_HOST` value with the port, and its `Origin`, when a browser sends one, is that same address. So open the dashboard by one of these names. The agent card and an invite link are open to everybody.
 - The A2A endpoint (`/a2a`) takes work only with a key from the allowed list. An invite link and the agent card of a peer must be `https` and not at a private address, unless `TULOY_PEER_ALLOW_LOCAL=1` (this machine only, plain http).
+- While a Tuloy has work for a peer, it tells that peer which of its agents works and which are done (the role and the state, as JSON text in the A2A working status: `{ "tuloy_progress": [{ "role", "state" }] }`). It sends no output, no reason and no model name before the result. The Tuloy that gets this progress checks it as outside data and drops all that does not match.
 - A numeric setting that is not a whole number in its range stops the start, with a message that names the setting.

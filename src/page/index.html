@@ -7,11 +7,15 @@
 <link rel="preload" href="/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/martian-mono.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/page/style.css">
+<script src="/page/theme.ts"></script>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/controls/OrbitControls.js":"/vendor/OrbitControls.js"}}</script>
 <script type="module" src="/page/app.ts"></script>
 </head>
 <body>
 <header class="bar">
   <p class="mark">Tuloy <span id="owner" class="owner"></span> <span id="demo-tag" class="tag tag-demo" hidden>Demo mode</span></p>
+  <label class="pick">Run <select id="run-pick"></select></label>
+  <button id="theme" class="theme" type="button">Dark theme</button>
   <nav class="nav" aria-label="Screens"><a href="/" aria-current="page">Runs</a><a href="/peers">Peers</a></nav>
 </header>
 
@@ -33,36 +37,58 @@
     <p class="slate-note">Reading the runs…</p>
   </section>
 
-  <div class="desk">
-    <section class="tasks" aria-labelledby="tasks-title">
-      <h2 id="tasks-title">Tasks</h2>
-      <ol id="tasks" class="task-list"></ol>
-    </section>
+  <section class="street-card" aria-label="The run as a trip">
+    <p id="street-say" class="street-say" role="status"></p>
+    <div id="street" class="street"></div>
+    <p id="street-off" class="street-off" hidden>This browser cannot draw the 3D street. The list and the result below show the run.</p>
+    <div class="street-tools">
+      <button id="replay" type="button">Replay the trip</button>
+      <label><input id="follow" type="checkbox"> Follow the jeepney</label>
+      <button id="view-reset" type="button">Reset the view</button>
+      <span class="street-hint">Drag to turn. Hold ⌘ or Ctrl and scroll to zoom.<span id="street-demo-hint" hidden> Click a shed on your route to block that agent.</span></span>
+    </div>
+    <p id="demo-note" class="demo-note" role="status"></p>
+    <ul id="demo-pending" class="demo-pending"></ul>
+    <button id="demo-clear" type="button" hidden>Clear the waiting injections</button>
+  </section>
 
-    <section class="trail" aria-labelledby="trail-title">
-      <h2 id="trail-title">Event trail</h2>
-      <ol id="trail" class="trail-list"></ol>
+  <div class="after">
+    <section class="did" aria-labelledby="did-title">
+      <h2 id="did-title">What the conductor did</h2>
+      <ol id="did"></ol>
     </section>
-
-    <aside class="rail">
-      <section aria-labelledby="runs-title">
-        <h2 id="runs-title">Past runs</h2>
-        <ol id="runs" class="run-list"></ol>
-      </section>
-      <section id="demo" class="demo" aria-labelledby="demo-title" hidden>
-        <h2 id="demo-title"><span class="tag tag-demo">Demo</span> Injections</h2>
-        <p>An injection is a failure made on purpose, to show a recovery. It is not a real failure.</p>
-        <label for="demo-task">Agent to fail</label>
-        <select id="demo-task"></select>
-        <div id="demo-kinds" class="demo-kinds"></div>
-        <p id="demo-note" class="demo-note" role="status"></p>
-        <ul id="demo-pending" class="demo-pending"></ul>
-        <button id="demo-clear" type="button" hidden>Clear the waiting injections</button>
-      </section>
-    </aside>
+    <section id="result" class="result" aria-labelledby="result-title"></section>
   </div>
 
-  <section id="result" class="result" aria-labelledby="result-title"></section>
+  <details class="details">
+    <summary>Details: tasks, event trail, past runs</summary>
+    <div class="desk">
+      <section class="tasks" aria-labelledby="tasks-title">
+        <h2 id="tasks-title">Tasks</h2>
+        <ol id="tasks" class="task-list"></ol>
+      </section>
+
+      <section class="trail" aria-labelledby="trail-title">
+        <h2 id="trail-title">Event trail</h2>
+        <ol id="trail" class="trail-list"></ol>
+      </section>
+
+      <aside class="rail">
+        <section aria-labelledby="runs-title">
+          <h2 id="runs-title">Past runs</h2>
+          <ol id="runs" class="run-list"></ol>
+        </section>
+        <section id="demo" class="demo" aria-labelledby="demo-title" hidden>
+          <h2 id="demo-title"><span class="tag tag-demo">Demo</span> Injections</h2>
+          <p>An injection is a failure made on purpose, to show a recovery. It is not a real failure.</p>
+          <label for="demo-task">Agent to fail</label>
+          <select id="demo-task"></select>
+          <div id="demo-kinds" class="demo-kinds"></div>
+        </section>
+      </aside>
+    </div>
+  </details>
 </main>
+<div id="shed-menu" class="shed-menu" role="menu" hidden></div>
 </body>
 </html>

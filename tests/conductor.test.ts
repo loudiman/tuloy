@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { SAMPLE_GOAL } from '../src/planner.ts';
 import { goodOutput } from './harness/scripted-model.ts';
+import { recoverySummary } from '../src/task-view.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
 test('a goal becomes a stored task graph and the run ends as done with scripts and a posting schedule', async () => {
@@ -206,4 +207,26 @@ test('the scheduler is told the date of today in Manila, so the schedule is not 
   await conductor.startRun(SAMPLE_GOAL).ended;
 
   expect(model.calls.find((c) => c.role === 'scheduler')!.system).toContain('Today is Thursday, November 12, 2026 in Manila. Each time is after today.');
+});
+
+test('the recovery summary: a run with no failure has no line; a retry and an escalated end are plain sentences', async () => {
+  const clean = testTuloy();
+  const first = clean.conductor.startRun(SAMPLE_GOAL);
+  await first.ended;
+  expect(recoverySummary(clean.store.events(first.runId))).toEqual([]);
+
+  const junk = { scripts: 'junk' };
+  const stuck = testTuloy({ script: { script: [junk, junk, junk] }, backupScript: { script: [junk] } });
+  const second = stuck.conductor.startRun(SAMPLE_GOAL);
+  await second.ended;
+  expect(recoverySummary(stuck.store.events(second.runId)).map((line) => line.text)).toEqual([
+    'The script agent failed: its output did not match the schema.',
+    'The conductor started the script agent again (retry 1 of 2).',
+    'The script agent failed: its output did not match the schema.',
+    'The conductor started the script agent again (retry 2 of 2).',
+    'The script agent failed: its output did not match the schema.',
+    'The conductor re-routed the script task to the backup model.',
+    'The backup model failed also.',
+    'The run ended as escalated: the backup model also failed.',
+  ]);
 });

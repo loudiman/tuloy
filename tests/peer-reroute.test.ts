@@ -6,7 +6,7 @@ import { expect, test } from 'vitest';
 import type { A2aAnswer } from '../src/peer-client.ts';
 import { SAMPLE_GOAL } from '../src/planner.ts';
 import { createServer } from '../src/server.ts';
-import { taskViews } from '../src/task-view.ts';
+import { recoverySummary, taskViews } from '../src/task-view.ts';
 import { goodOutput } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
@@ -337,22 +337,6 @@ test('after a restart, a task that was with a peer is not sent to a peer again a
   expect(tuloy.store.run(runId)?.status).toBe('escalated');
 });
 
-test('a script from a peer that the reviewer rejects is a failure of the peer step: it is not written again, and the order continues', async () => {
-  const rejected = { reviews: [{ script_id: 's1', verdict: 'reject', score: 3, issues: ['The hook does not name the store.'], hints: ['Name the store.'] }, { ...pass, script_id: 's2' }] };
-  const tuloy = ownModelsDown({ peer: [result(goodOutput.script)], script: { script: [down()], reviewer: [rejected] } });
-  const { conductor, store, peer } = tuloy;
-
-  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
-  await ended;
-
-  expect(store.run(runId)?.status).toBe('escalated');
-  expect(trail(tuloy, runId, 'scripts').slice(-5)).toEqual(["reroute Maria's script agent", 'dispatch started', 'validate valid', 'review rejected', 'goal_to_peer Maria']);
-  expect(stuckReason(tuloy, runId)).toBe('Script task rejected by the reviewer: The hook does not name the store.');
-  // The peer got the task one time, and then the full goal.
-  expect(peer.calls.map((c) => c.move)).toEqual(['send', 'send']);
-  expect(store.events(runId).some((e) => e.taskId === 'schedule')).toBe(false);
-});
-
 // ---- Review fix 9: the next peer is asked when the first does not take the task ----
 
 /** Own models down for the script task; Ana and Maria on the allowed list. Ana is the first (the list is in the order of the names). */
@@ -362,6 +346,44 @@ function twoPeersOnTheList(answers: A2aAnswer[]) {
   return tuloy;
 }
 const askedAt = ({ peer }: Tuloy) => peer.calls.map((c) => `${c.move} ${new URL(c.call.address).hostname}`);
+
+test("a script from a peer that the reviewer rejects goes to that peer's script agent one more time, with the reviewer's hints", async () => {
+  const hints = { script_id: 's1', issues: ['The hook does not name the store.'], hints: ['Name the store.'] };
+  const rejected = { reviews: [{ ...hints, verdict: 'reject', score: 3 }, { ...pass, script_id: 's2' }] };
+  // Ana is the first peer and writes the script. Maria is on the list too, and gets nothing.
+  const tuloy = ownModelsDown({ peer: [result(goodOutput.script)], script: { script: [down()], reviewer: [rejected] } });
+  tuloy.store.addPeer({ name: 'Ana', address: 'https://ana.example', sendKey: 'the-key-that-ana-accepts-from-this-tuloy', acceptKey: 'the-key-from-ana' });
+  const { conductor, store, peer } = tuloy;
+
+  const { runId, ended } = conductor.startRun(SAMPLE_GOAL);
+  await ended;
+
+  expect(store.run(runId)?.status).toBe('done');
+  expect(store.tasks(runId).map((t) => `${t.id} ${t.status}`)).toEqual(['trends done', 'scripts done', 'review done', 'schedule done']);
+  expect(trail(tuloy, runId, 'scripts').filter((line) => /^(reroute|review)/.test(line))).toEqual(['reroute backup model', "reroute Ana's script agent", 'review rejected', "reroute Ana's script agent", 'review pass']);
+  expect(store.events(runId).findLast((e) => e.action === 'reroute')).toMatchObject({ cause: "the reviewer rejected the peer's script", data: { do: 'peer', peer: 'Ana' } });
+  expect(store.events(runId).some((e) => e.action === 'goal_to_peer')).toBe(false);
+  // The same peer got the task two times. The second time the input has the issues and the hints of the reviewer.
+  expect(askedAt(tuloy)).toEqual(['send ana.example', 'send ana.example']);
+  const inputs = peer.calls.map((c) => JSON.parse((c.call as unknown as { text: string }).text).input);
+  expect(inputs[0].reviewer_hints).toBeUndefined();
+  expect(inputs[1].reviewer_hints).toEqual([hints]);
+  // The scheduler of the owner made the schedule.
+  expect(tuloy.model.calls.map((c) => c.role)).toContain('scheduler');
+  // The recovery summary tells this in plain sentences, in order.
+  expect(recoverySummary(store.events(runId))).toEqual([
+    { kind: 'trouble', text: 'The script agent failed: the model is not available (503 model down).' },
+    { kind: 'recovery', text: 'The conductor re-routed the script task to the backup model.' },
+    { kind: 'trouble', text: 'The backup model failed also.' },
+    { kind: 'recovery', text: "The conductor re-routed the script task to Ana's script agent." },
+    { kind: 'ok', text: "Ana's script agent finished the script task." },
+    { kind: 'trouble', text: 'The reviewer rejected s1.' },
+    { kind: 'recovery', text: "The conductor re-routed the script task to Ana's script agent." },
+    { kind: 'ok', text: "Ana's script agent finished the script task." },
+    { kind: 'ok', text: 'The reviewer passed every script.' },
+    { kind: 'end', text: 'The run ended as done.' },
+  ]);
+});
 
 test.each<[string, A2aAnswer]>([
   ['refuses', { status: 'refused', text: 'I do not take this work.', ...ids }],
