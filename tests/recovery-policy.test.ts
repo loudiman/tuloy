@@ -28,6 +28,21 @@ test.each([
   expect(nextAction(failure, [...history], limits)).toEqual(action);
 });
 
+// A script that a peer's script agent wrote, and that the owner's reviewer rejected.
+const rejectedPeerScript: Failure = { kind: 'reviewer_rejection', detail: 'x', onPeer: true };
+const ownModelsFailed = [fail('model_unavailable'), onBackup('model_unavailable')];
+const own = { forPeer: false, peers: 1 };
+
+test.each([
+  ["the first rejection of a peer's script: the same peer writes it again", rejectedPeerScript, ownModelsFailed, own, { do: 'peer', cause: "the reviewer rejected the peer's script" }],
+  ['the second rejection: the full goal goes to a peer', rejectedPeerScript, [...ownModelsFailed, rejectedPeerScript], own, { do: 'goal', cause: "the reviewer rejected the peer's script again" }],
+  ['the peer fails the second attempt: the full goal goes to a peer', { kind: 'peer_failed', detail: 'x', onPeer: true }, [...ownModelsFailed, rejectedPeerScript], own, { do: 'goal', cause: 'the re-route to a peer failed' }],
+  ['the peer is off the allowed list after the rejection: the run is escalated', rejectedPeerScript, ownModelsFailed, { forPeer: false, peers: 0 }, escalate("the reviewer rejected the peer's script")],
+  ['work for a peer never goes to a peer', rejectedPeerScript, ownModelsFailed, { forPeer: true, peers: 1 }, escalate("the reviewer rejected the peer's script")],
+] as const)('%s', (_name, failure, history, work, action) => {
+  expect(nextAction(failure, [...history], limits, work)).toEqual(action);
+});
+
 test('with a limit of 0 retries the first failure goes to the backup model', () => {
   expect(nextAction(fail('timeout'), [], { retries: 0, retryWaitMs: 2000 })).toEqual(backup('0 of 0 retries used'));
 });

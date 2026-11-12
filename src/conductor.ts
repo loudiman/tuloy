@@ -267,7 +267,8 @@ export function createConductor({
         const paths = [
           `the own ${task.role.replace('_', ' ')} agent`,
           ...(retries ? [`${retries} ${retries === 1 ? 'retry' : 'retries'}`] : []),
-          ...tried.filter((e) => e.action === 'reroute').map((e) => (e.result === 'backup model' ? 'the backup model' : e.result)),
+          // A peer that got the task two times (a rejected script went back to it) is one path.
+          ...new Set(tried.filter((e) => e.action === 'reroute').map((e) => (e.result === 'backup model' ? 'the backup model' : e.result))),
         ];
         store.append({ runId, taskId, action: 'goal_to_peer', cause: action.cause, result: to.name, data: { ...action, peer: to.name, tried: paths } });
         store.updateTask(runId, taskId, { status: 'escalated' });
@@ -281,8 +282,10 @@ export function createConductor({
         model = 'backup';
       } else if (action.do === 'peer') {
         // Step 3: the same checked input goes to the same agent of a peer: the first peer of the allowed list that this task did not ask yet.
+        // A script that the reviewer rejected goes back to the peer that wrote it, with the reviewer's hints in the input.
         const asked = store.events(runId).flatMap((e) => (e.taskId === taskId && e.action === 'reroute' ? [(e.data as { peer?: string } | null)?.peer] : []));
-        peer = store.peers().find((p) => !asked.includes(p.name)) ?? store.peers()[0]!;
+        const wrote = failure.kind === 'reviewer_rejection' ? store.peers().find((p) => p.name === asked.findLast(Boolean)) : undefined;
+        peer = wrote ?? store.peers().find((p) => !asked.includes(p.name)) ?? store.peers()[0]!;
         model = 'peer';
         const agent = peerAgentName(peer, task.role);
         store.append({ runId, taskId, action: 'reroute', cause: action.cause, result: agent, data: { ...action, peer: peer.name } });
