@@ -36,6 +36,8 @@
 }
 
 * { box-sizing: border-box; }
+/* A hidden element stays hidden, also when a class gives it a display. */
+[hidden] { display: none !important; }
 body {
   margin: 0;
   background: var(--desk);
