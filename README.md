@@ -5,6 +5,23 @@ Tuloy ("keep going") runs a team of AI agents toward a goal and recovers by itse
 - Install: `pnpm install`. Test: `pnpm test`. Typecheck: `pnpm typecheck`.
 - Start one Tuloy: copy `.env.example` to `.env`, fill in `OPENROUTER_API_KEY`, `TULOY_PRIMARY_MODEL` and `TULOY_BACKUP_MODEL`, then `pnpm start`. The dashboard is at http://localhost:4000.
 
+## Demo
+
+**Video (2 min 15 s):** [docs/video/tuloy-demo.mp4](docs/video/tuloy-demo.mp4). Open the link and select "View raw" to play or download it.
+
+[![The demo video: the conductor re-routes the script task to a peer](docs/screenshots/demo-video-poster.png)](docs/video/tuloy-demo.mp4)
+
+The video shows one real run of 12 Nov 2026 with real models (`anthropic/claude-sonnet-5.5` as the primary model, `openai/gpt-6.1-terra` as the backup model), recorded by a script that drove the page. The presenter injected an outage of all own models at the script agent (demo mode); the rest is real. The run ended as done in 56 seconds with no person in the loop. Sam is a sample owner on the same laptop.
+
+| | |
+| --- | --- |
+| ![A click on the Script shed opens the menu of injections](docs/screenshots/demo-1-inject.png) **1. A failure made on purpose.** A click on the Script shed blocks that agent. | ![The conductor re-routes the script task to Sam's Tuloy](docs/screenshots/demo-video-poster.png) **2. Re-route to a peer.** Lou's own models are out. The conductor sends the script task to Sam's Tuloy. |
+| ![The reviewer rejected the scripts; the peer writes again with the hints](docs/screenshots/demo-2-second-attempt.png) **3. Second attempt with hints.** Lou's reviewer rejected the peer's scripts. They go back to Sam with the hints. | ![The run ended as done](docs/screenshots/3d-5-full-window.png) **4. Done.** The reviewer passed the scripts, and the scheduler made the posting schedule. |
+| ![The trends from a web search, with links to 7 sources](docs/screenshots/3d-9-web-search-sources.png) **The trend scout can search the web.** The result lists the pages that the search gave (a setting). | ![The street at night](docs/screenshots/3d-6-full-window-dark.png) **The dark theme** is a night street. |
+| ![The jeepney, with the conductor at the wheel](docs/screenshots/3d-8-jeepney.png) **The conductor drives the jeepney.** The conductor is rules, not a model. The agents are the AI. | ![Three roads: the owner and two peers](docs/screenshots/3d-7-three-roads.png) **One road for each peer** (scripted model, not a real model). |
+
+**What is proven with real models:** recovery with no person (retry, backup model, re-route to a peer, a second attempt with the reviewer's hints), and the web search of the trend scout with its sources. **Not proven with real models yet:** the full goal at a peer, three or more Tuloys, and an unattended run of many hours. 290 automated tests cover the recovery order with a fake model.
+
 ## The Runs page
 
 The Runs page shows a run as a trip on a 3D street. Your route is the far road. Each peer on your allowed list has its own road, nearer to you. Each agent is a robot at a waiting shed, and a jeepney carries the work from stop to stop. The conductor drives the jeepney. A blocked stop gets a road sign with the stuck reason. When the conductor re-routes a task to a peer, the jeepney goes to the peer's road.
