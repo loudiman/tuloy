@@ -1,0 +1,8 @@
+# Nothing of the owner goes into the image: no key file, no data, no git history.
+.env
+.env.*
+data
+.git
+node_modules
+docs
+tests

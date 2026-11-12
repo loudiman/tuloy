@@ -39,7 +39,7 @@ const hash = (token: string) => createHash('sha256').update(token).digest('hex')
  * The owner's side of the allowed list: read it, add to it, remove from it, and invites. `handle` answers false when the request is not for it.
  * Keys travel only in request and response bodies between the two Tuloys. They are never in a link, an event or an answer to the page.
  */
-export function createAllowedList({ store, owner, peerTasksPerHour, allowLocal }: { store: Store; owner: string; peerTasksPerHour: number; allowLocal: boolean }) {
+export function createAllowedList({ store, owner, peerTasksPerHour, allowLocal, publicAddress }: { store: Store; owner: string; peerTasksPerHour: number; allowLocal: boolean; publicAddress?: string }) {
   const onList = (name: string) => store.peers().some((peer) => peer.name === name);
   // Every call to another owner's address goes through the address guard of the peer client: https only, no private or
   // local range, no redirect. `allowLocal` (TULOY_PEER_ALLOW_LOCAL) permits plain http to this same machine.
@@ -59,7 +59,7 @@ export function createAllowedList({ store, owner, peerTasksPerHour, allowLocal }
       const json = (status: number, body: unknown) => (res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body)), true);
       const path = new URL(req.url ?? '/', 'http://tuloy').pathname;
       // ponytail: this Tuloy's address is the loopback socket of the request, as for the agent card. A public address needs a setting.
-      const self = `http://${req.socket.localAddress}:${req.socket.localPort}`;
+      const self = publicAddress ?? `http://${req.socket.localAddress}:${req.socket.localPort}`;
       const token = /^\/invite\/([\w-]+)$/.exec(path)?.[1];
 
       if (req.method === 'GET' && path === '/peers') return (res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(peersPage), true);

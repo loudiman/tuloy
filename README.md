@@ -73,6 +73,24 @@ What stays open with no password, on purpose: the agent card, an invite link (it
 
 Not built: a limit on wrong password tries, and a sign-out button (close the browser to sign out).
 
+### On Fly.io
+
+The repo has a `Dockerfile` and a `fly.toml` for one Tuloy on Fly.io: one machine that stays on, in Singapore, with a disk for the data folder. The commands below are from the Fly.io documents. Each owner uses their own app name: change `app`, `TULOY_PUBLIC_HOST` and `TULOY_OWNER` in `fly.toml` first.
+
+```sh
+brew install flyctl          # the Fly.io command line tool
+fly auth login               # your own account
+fly apps create tuloy-lou    # the name must be free on Fly.io; use the same name in fly.toml
+fly secrets set OPENROUTER_API_KEY=<your key> TULOY_DASHBOARD_PASSWORD=<16 characters or more>
+fly deploy                   # builds the image and starts the machine; the first deploy makes the disk
+```
+
+Then open `https://<app>.fly.dev`. The browser asks for the password; the user name can be any text.
+
+- The machine stays on (`auto_stop_machines = "off"`), so that a run and the work for a peer go on with no browser open. This costs money each month; see the Fly.io price page.
+- A second owner does the same steps with their own app name and their own key. Then the two connect by invite, as on one laptop, with no `TULOY_PEER_ALLOW_LOCAL`: a hosted Tuloy gives its `https` address in the invite link.
+- To test the image on your own machine first: `docker build -t tuloy-local .` and `docker run -p 8080:8080 -e OPENROUTER_API_KEY=... -e TULOY_PRIMARY_MODEL=... -e TULOY_BACKUP_MODEL=... -e TULOY_PUBLIC_HOST=localhost:8080 -e TULOY_DASHBOARD_PASSWORD=... tuloy-local`.
+
 ## Run two Tuloys on one laptop
 
 This is the demo path: the owner's own models go down, and the conductor re-routes the script task to a peer. The second Tuloy is a sample owner, not a second person.

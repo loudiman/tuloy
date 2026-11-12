@@ -33,7 +33,7 @@ const digest = (key: string) => createHash('sha256').update(key).digest();
  * The peer server: the allowed list API, the agent card and the A2A endpoint of one Tuloy.
  * `handle` answers false when the request is not for it.
  */
-export function createPeerServer({ store, conductor, owner, peerTasksPerHour, allowLocal }: { store: Store; conductor: Conductor; owner: string; peerTasksPerHour: number; allowLocal: boolean }) {
+export function createPeerServer({ store, conductor, owner, peerTasksPerHour, allowLocal, publicAddress }: { store: Store; conductor: Conductor; owner: string; peerTasksPerHour: number; allowLocal: boolean; publicAddress?: string }) {
   const card = (address: string) =>
     AgentCard.fromJSON({
       name: `Tuloy of ${owner}`,
@@ -141,7 +141,7 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour, al
   /** True when the A2A task was cancelled: it has its last state already. Either way the task is not in work now. */
   const stopped = (taskId: string) => (inWork.delete(taskId), cancelled.delete(taskId));
 
-  const allowedList = createAllowedList({ store, owner, peerTasksPerHour, allowLocal });
+  const allowedList = createAllowedList({ store, owner, peerTasksPerHour, allowLocal, publicAddress });
   let a2a: { card: AgentCard; transport: JsonRpcTransportHandler } | undefined;
 
   return {
@@ -149,9 +149,9 @@ export function createPeerServer({ store, conductor, owner, peerTasksPerHour, al
       const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
       const path = new URL(req.url ?? '/', 'http://tuloy').pathname;
       if (await allowedList.handle(req, res)) return true;
-      // ponytail: the address is the loopback socket of the first request. A public address needs a setting.
+      // The address of this Tuloy for a peer: the public address when it has one (TULOY_PUBLIC_HOST), or the socket of the first request on this machine.
       a2a ??= (() => {
-        const made = card(`http://${req.socket.localAddress}:${req.socket.localPort}`);
+        const made = card(publicAddress ?? `http://${req.socket.localAddress}:${req.socket.localPort}`);
         return { card: made, transport: new JsonRpcTransportHandler(new DefaultRequestHandler(made, new InMemoryTaskStore(), executor)) };
       })();
 

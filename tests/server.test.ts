@@ -289,6 +289,18 @@ test('with a password, the page and its API ask for it; the agent card and the A
     // The public name of the host, as a browser behind the provider's https sends it: no port.
     expect(await rawCall(url, 'GET', '/api/runs', { host: 'lou.example.com', origin: 'https://lou.example.com', authorization: basic('a-long-test-password') })).toBe(200);
     expect(await rawCall(url, 'GET', '/api/runs', { host: 'evil.example.com', authorization: basic('a-long-test-password') })).toBe(403);
+    // A peer on the internet must get the public https address of this Tuloy, not the address inside the server.
+    const card = (await (await fetch(`${url}/.well-known/agent-card.json`)).json()) as { supportedInterfaces: { url: string }[] };
+    expect(card.supportedInterfaces[0]!.url).toBe('https://lou.example.com/a2a');
+    const invite = await new Promise<string>((resolve, reject) => {
+      const request = http.request({ hostname: '127.0.0.1', port: new URL(url).port, method: 'POST', path: '/api/invites', headers: { host: 'lou.example.com', authorization: basic('a-long-test-password') } }, (response) => {
+        let text = '';
+        response.on('data', (chunk) => (text += chunk)).on('end', () => resolve(text));
+      });
+      request.on('error', reject);
+      request.end();
+    });
+    expect((JSON.parse(invite) as { link: string }).link).toMatch(/^https:\/\/lou\.example\.com\/invite\/[\w-]+$/);
     // A peer needs no password of the page: its key is the proof.
     expect(await rawCall(url, 'GET', '/.well-known/agent-card.json', { host: 'lou.example.com' })).toBe(200);
     // The A2A endpoint refuses a call with no key by itself. It does not ask for the password of the page.
