@@ -57,7 +57,7 @@ By default the trend scout proposes trends from the knowledge of the model. With
 A Tuloy on a server is one Node process that stays on, with a disk for its data folder (`TULOY_DATA_DIR`). Each owner hosts their own. Three rules apply before it is open to a network:
 
 1. **The page has a password.** Set `TULOY_DASHBOARD_PASSWORD` (16 characters or more). The browser asks for it one time; the user name can be any text. The password is safe only over `https`, which the hosting provider gives. Tuloy does not start open to a network with no password: its page can start runs, and each run spends your credits.
-2. **Demo mode is off.** Tuloy does not start open to a network with `TULOY_DEMO=1`: in demo mode a visitor can make failures on purpose.
+2. **Only the owner can change something.** Each change needs the password: a start of a run, an injection in demo mode, the peers and the invites. With `TULOY_PUBLIC_READ=1`, everybody may see the Runs page, the runs and the live events with no password, and nothing more. The owner then signs in with **Owner sign-in** in the top bar. A reader does not see the controls of demo mode.
 3. **The key is a secret of the provider.** Put `OPENROUTER_API_KEY` and `TULOY_DASHBOARD_PASSWORD` in the provider's secret store, not in a file of the repo. Set a spending limit for the key at OpenRouter, so that a fault cannot spend more than that.
 
 The settings for a hosted Tuloy:
@@ -68,6 +68,8 @@ The settings for a hosted Tuloy:
 | `TULOY_PUBLIC_HOST` | The name in the address bar, for example `lou.example.com` (no `https://`, no port) |
 | `TULOY_DASHBOARD_PASSWORD` | The password of the page, 16 characters or more |
 | `TULOY_DATA_DIR` | A folder on the disk that stays after a restart |
+| `TULOY_PUBLIC_READ` | `1` lets everybody see the runs with no password (for a demo link). Leave it out for a private Tuloy |
+| `TULOY_DEMO` | `1` gives the owner the injections, to show a recovery. The password guards them |
 
 What stays open with no password, on purpose: the agent card, an invite link (its token is the proof), and the A2A endpoint (it takes work only with a key from the allowed list). A peer does not need the password of your page.
 
