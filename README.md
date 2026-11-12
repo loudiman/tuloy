@@ -7,6 +7,13 @@ Tuloy ("keep going") runs a team of AI agents toward a goal and recovers by itse
 
 ## Demo
 
+**Live, with no password to look:**
+
+- [tuloy-lou.fly.dev](https://tuloy-lou.fly.dev): Lou's Tuloy. Select run 2 in the run picker and press **Replay the trip**: the script agent fails, the conductor re-routes the task to Sam's Tuloy over the internet, Lou's reviewer rejects the script, Sam writes it again with the hints, and the run ends as done.
+- [tuloy-sam.fly.dev](https://tuloy-sam.fly.dev): Sam's Tuloy, the sample owner, with the two script tasks that it did for Lou.
+
+A reader can look at the runs. Only the owner, with the password, can start a run or inject a failure. The two Tuloys are two machines on Fly.io in one account, with one model key; Sam is a sample owner, not a second person. The outage in run 2 was injected in demo mode; the rejection and the recovery were real (13 Nov 2026, real models).
+
 **Video (2 min 15 s):** [docs/video/tuloy-demo.mp4](docs/video/tuloy-demo.mp4). Open the link and select "View raw" to play or download it.
 
 [![The demo video: the conductor re-routes the script task to a peer](docs/screenshots/demo-video-poster.png)](docs/video/tuloy-demo.mp4)
