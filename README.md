@@ -7,7 +7,7 @@ Tuloy ("keep going") runs a team of AI agents toward a goal and recovers by itse
 
 ## The Runs page
 
-The Runs page shows a run as a trip on a 3D street. Your route is the far road. Each peer on your allowed list has its own road, nearer to you. Each agent is a robot at a waiting shed, and a jeepney carries the work from stop to stop. A blocked stop gets a road sign with the stuck reason. When the conductor re-routes a task to a peer, the jeepney goes to the peer's road.
+The Runs page shows a run as a trip on a 3D street. Your route is the far road. Each peer on your allowed list has its own road, nearer to you. Each agent is a robot at a waiting shed, and a jeepney carries the work from stop to stop. The conductor drives the jeepney. A blocked stop gets a road sign with the stuck reason. When the conductor re-routes a task to a peer, the jeepney goes to the peer's road.
 
 The street fills the window. The other parts lie on top of it: the run, the list "What the conductor did" and the result are in a column on the right, and the sentence at the bottom left says what happens now. Each panel of the column folds: a click on its title closes it or opens it. The result is folded during a run and opens when the run ends. The details (tasks, event trail, past runs) are below the street: scroll down. In a narrow window the parts are below the street.
 
@@ -20,7 +20,8 @@ With two peers, the street has three roads. Here the first peer refused the task
 - Drag to turn the street. Hold ⌘ or Ctrl and scroll to zoom. **Reset the view** puts it back, and **Follow the jeepney** moves the view with the jeepney.
 - **Replay the trip** plays an ended run from its start.
 - In demo mode, a click on a shed of your route opens the menu of injections for that agent.
-- The button in the top bar switches between the light theme and the dark theme.
+- The button in the top bar switches between the light theme and the dark theme. In the light theme the street is a late afternoon. In the dark theme it is a night with street lamps and headlights.
+- The houses, the trees and the lamps are scenery. They say nothing about the run.
 - The browser must have WebGL. Without it, the page shows the list "What the conductor did" and the result.
 
 ## Run two Tuloys on one laptop
