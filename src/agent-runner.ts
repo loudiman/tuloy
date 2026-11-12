@@ -156,13 +156,17 @@ const SEARCH_PROMPT =
 async function scoutTrends(input: unknown, model: LanguageModel, abortSignal: AbortSignal, clock: Clock, maxOutputTokens: number, outside: Outside[], search: ToolSet[string] | undefined): Promise<AgentResult> {
   const pages: Source[] = [];
   let result = search ? await callModel('trend_scout', input, model, abortSignal, clock, maxOutputTokens, outside, { web_search: search }, pages) : undefined;
+  // Why there was no search, in plain words, for the owner.
+  let why = search ? 'The model did not search.' : undefined;
   if (!result?.ok && !abortSignal.aborted) {
+    if (result) why = `The call with the search failed: ${result.failure.detail}`.slice(0, 300);
     pages.length = 0;
     result = await callModel('trend_scout', input, model, abortSignal, clock, maxOutputTokens, outside);
   }
   if (!result?.ok) return result!;
   const { search: _search, sources: _sources, ...output } = result.output as Record<string, unknown>;
-  return { ok: true, output: search ? { ...output, search: pages.length ? 'web' : 'none', sources: pages } : output };
+  const { search_note: _note, ...rest } = output;
+  return { ok: true, output: search ? { ...rest, search: pages.length ? 'web' : 'none', sources: pages, ...(!pages.length && { search_note: why }) } : rest };
 }
 
 type Source = { title: string; url: string };

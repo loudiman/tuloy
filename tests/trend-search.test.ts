@@ -41,14 +41,14 @@ test('when the call with search fails, the trend scout answers with no search an
     return [text(goodOutput.trend_scout)];
   });
   const result = await runAgent('trend_scout', { goal: 'g' }, model, { ...options, search });
-  expect(result).toMatchObject({ ok: true, output: { search: 'none', sources: [] } });
+  expect(result).toMatchObject({ ok: true, output: { search: 'none', sources: [], search_note: 'The call with the search failed: the search is down' } });
   expect(calls).toHaveLength(2);
 });
 
 test('a model that searched nothing gives "no search"; sources that a model wrote itself are dropped', async () => {
   const invented = { ...(goodOutput.trend_scout as object), search: 'web', sources: [{ title: 'Invented', url: 'https://example.com/invented' }] };
   const withTool = await runAgent('trend_scout', { goal: 'g' }, fake(() => [text(invented)]).model, { ...options, search });
-  expect(withTool).toMatchObject({ ok: true, output: { search: 'none', sources: [] } });
+  expect(withTool).toMatchObject({ ok: true, output: { search: 'none', sources: [], search_note: 'The model did not search.' } });
   const noTool = fake(() => [text(invented)]);
   const plain = await runAgent('trend_scout', { goal: 'g' }, noTool.model, options);
   expect(plain.ok && plain.output).toEqual(goodOutput.trend_scout);

@@ -303,7 +303,7 @@ function drawResult() {
   }
 
   // The trends, and where they came from: a web search with its pages, or the knowledge of the model.
-  const scout = output('trend_scout') as { trends?: { topic?: string; why?: string }[]; search?: string; sources?: { title?: string; url?: string }[] } | null | undefined;
+  const scout = output('trend_scout') as { trends?: { topic?: string; why?: string }[]; search?: string; search_note?: string; sources?: { title?: string; url?: string }[] } | null | undefined;
   if (scout?.trends?.length) {
     const sources = (scout.search === 'web' ? (scout.sources ?? []) : []).filter((s) => /^https?:\/\//.test(s.url ?? ''));
     parts.push(
@@ -312,6 +312,7 @@ function drawResult() {
         'div',
         { class: 'trends' },
         h('ul', {}, ...scout.trends.map((t) => h('li', {}, h('b', {}, t.topic ?? ''), ` ${t.why ?? ''}`))),
+        !sources.length && scout.search_note ? h('p', { class: 'note' }, scout.search_note) : null,
         sources.length ? h('ol', { class: 'sources' }, ...sources.map((s) => h('li', {}, h('a', { href: s.url!, target: '_blank', rel: 'noopener noreferrer' }, s.title || s.url!)))) : null,
       ),
     );
