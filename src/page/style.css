@@ -378,7 +378,7 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
   --st-panel: #f6f7f4; --st-ink: #1b1e23; --st-white: #f6f7f4; --st-route: #1f4fd8; --st-peer: #0b7a75; --st-backup: #8093b5;
   --st-block: #d3212f; --st-sign: #ffcf33; --st-on-sign: #1b1e23; --st-road: #3b4049; --st-roadline: #f6f7f4; --st-steel: #c3c9d2; --st-glass: #2a2f37; --st-ground: #e7eae4;
 }
-.mark, .slate h1, .street-say, .did h2, .result > h2, .details > summary, .result-fold > summary, .street-tools button, .shed-menu p {
+.mark, .slate h1, .street-say, .did h2, .result > h2, .details > summary, .fold > summary, .street-tools button, .shed-menu p {
   font-family: var(--sign-face);
   font-weight: 800;
   font-stretch: normal;
@@ -415,7 +415,6 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
 .shed-menu button:hover { background: var(--ink); color: var(--sheet); }
 body > .shed-menu, .shed-menu { position: absolute; }
 
-.did { background: var(--sheet); border: 3px solid var(--ink); padding: 0.9rem 1.1rem 1.1rem; }
 .did h2, .result > h2 { font-size: 1.5rem; color: var(--ink); margin-bottom: 0.5rem; }
 .did ol { list-style: decimal; padding-left: 1.5rem; line-height: 1.45; }
 .did li.recovery-trouble { color: var(--stop); font-weight: 600; }
@@ -465,7 +464,7 @@ body > .shed-menu, .shed-menu { position: absolute; }
 .caption .demo-note, .caption .demo-pending { margin: 0; padding: 0.4rem 0.7rem; background: var(--sheet); border: 2px solid var(--ink); border-left-width: 6px; }
 .caption #demo-clear { margin: 0; }
 .side { display: grid; gap: 0.8rem; align-content: start; }
-.side .slate { min-height: 0; padding: 0.7rem 0.9rem; }
+.side .slate { min-height: 0; padding: 0; border: 0; background: none; }
 .side .slate-top { flex-wrap: wrap-reverse; gap: 0.4rem 1rem; }
 .side .slate h1 { font-size: 1.2rem; }
 .side .slate-state .status { font-size: 1rem; }
@@ -476,9 +475,10 @@ body > .shed-menu, .shed-menu { position: absolute; }
 .side .slate-help { font-size: 1rem; padding-bottom: 0; }
 .side .slate .fields { gap: 0.2rem 1.4rem; }
 .side .slate .field dd { font-size: 0.85rem; }
-.result-fold { margin: 0; background: var(--sheet); border: 3px solid var(--ink); padding: 0.7rem 1.1rem; }
-.result-fold > summary { font-size: 1.5rem; color: var(--ink); width: auto; }
-.result-fold[open] > summary { margin-bottom: 0.6rem; }
+/* Each panel of the column folds: a click on its title closes it and gives the room to the street. */
+.fold { margin: 0; background: var(--sheet); border: 3px solid var(--ink); padding: 0.6rem 1.1rem; }
+.fold > summary { font-size: 1.5rem; color: var(--ink); width: auto; }
+.fold[open] > summary { margin-bottom: 0.5rem; }
 .result-fold .result > h2 { display: none; }
 .result-fold .result h3:first-of-type { margin-top: 0; }
 .result-fold .post { grid-template-columns: 1fr; }
@@ -500,10 +500,9 @@ body > .shed-menu, .shed-menu { position: absolute; }
   .caption { align-self: end; max-width: 38rem; }
   .side { display: flex; flex-direction: column; }
   .side > * { flex: 0 1 auto; overflow: auto; }
-  .side .slate { flex-shrink: 0; }
-  .side .did { min-height: 4.5rem; }
-  .side:has(.result-fold[open]) .did { max-height: 26%; }
-  .result-fold { flex-shrink: 0; }
+  .side > .fold { flex-shrink: 0; }
+  .side > .did[open] { flex-shrink: 1; min-height: 6.5rem; }
+  .side:has(.result-fold[open]) .did[open] { max-height: 26%; }
   .result-fold[open] { flex: 1 1 0; min-height: 6rem; }
   main { padding-top: 1.4rem; }
 }

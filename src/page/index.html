@@ -45,14 +45,17 @@
       <p id="street-say" class="street-say" role="status"></p>
     </div>
     <div class="side">
-      <section id="slate" class="slate" aria-live="polite">
-        <p class="slate-note">Reading the runs…</p>
-      </section>
-      <section class="did" aria-labelledby="did-title">
-        <h2 id="did-title">What the conductor did</h2>
+      <details class="fold" open>
+        <summary>Run</summary>
+        <section id="slate" class="slate" aria-live="polite">
+          <p class="slate-note">Reading the runs…</p>
+        </section>
+      </details>
+      <details class="fold did" open>
+        <summary>What the conductor did</summary>
         <ol id="did"></ol>
-      </section>
-      <details id="result-fold" class="result-fold">
+      </details>
+      <details id="result-fold" class="fold result-fold">
         <summary>Result</summary>
         <section id="result" class="result" aria-labelledby="result-title"></section>
       </details>

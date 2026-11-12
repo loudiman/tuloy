@@ -9,7 +9,7 @@ Tuloy ("keep going") runs a team of AI agents toward a goal and recovers by itse
 
 The Runs page shows a run as a trip on a 3D street. Your route is the far road and a peer's route is the near road. Each agent is a robot at a waiting shed, and a jeepney carries the work from stop to stop. A blocked stop gets a road sign with the stuck reason. When the conductor re-routes a task to a peer, the jeepney goes to the peer's road.
 
-The street fills the window. The other parts lie on top of it: the run, the list "What the conductor did" and the result are in a column on the right, and the sentence at the bottom left says what happens now. The result is folded during a run and opens when the run ends. The details (tasks, event trail, past runs) are below the street: scroll down. In a narrow window the parts are below the street.
+The street fills the window. The other parts lie on top of it: the run, the list "What the conductor did" and the result are in a column on the right, and the sentence at the bottom left says what happens now. Each panel of the column folds: a click on its title closes it or opens it. The result is folded during a run and opens when the run ends. The details (tasks, event trail, past runs) are below the street: scroll down. In a narrow window the parts are below the street.
 
 ![The run ended as done after a re-route to a peer](docs/screenshots/3d-5-full-window.png)
 
