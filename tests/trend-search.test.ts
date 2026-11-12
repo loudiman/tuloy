@@ -52,7 +52,8 @@ test('when the search step fails, the trend scout answers with no search and say
 });
 
 test('a model that searched nothing gives "no search"; sources that a model wrote itself are dropped', async () => {
-  const invented = { ...(goodOutput.trend_scout as object), search: 'web', sources: [{ title: 'Invented', url: 'https://example.com/invented' }] };
+  // The fields of a model can also be of a wrong form: a note that is too long, a source that is no web address. They must not fail the task.
+  const invented = { ...(goodOutput.trend_scout as object), search: 'web', search_note: 'x'.repeat(900), sources: [{ title: 'Invented', url: 'not a web address' }] };
   const withTool = await runAgent('trend_scout', { goal: 'g' }, fake(() => [text(invented)]).model, { ...options, search });
   expect(withTool).toMatchObject({ ok: true, output: { search: 'none', sources: [], search_note: 'The model did not search.' } });
   const noTool = fake(() => [text(invented)]);

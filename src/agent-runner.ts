@@ -191,7 +191,8 @@ async function searchWeb(input: unknown, model: LanguageModel, abortSignal: Abor
 type Source = { title: string; url: string };
 
 async function callModel(role: Role, input: unknown, model: LanguageModel, abortSignal: AbortSignal, clock: Clock, maxOutputTokens: number, outside: Outside[], notes?: string): Promise<AgentResult> {
-  const schema: z.ZodType = roles[role].output;
+  // The model of the trend scout gets the list of trends only. The fields about the search are Tuloy's, so the model is not asked for them.
+  const schema: z.ZodType = role === 'trend_scout' ? roles.trend_scout.output.pick({ trends: true }) : roles[role].output;
   // The fields from this Tuloy's own agents first, as JSON. Then each peer's fields, as JSON inside the outside-text label.
   const fields = Object.entries(input as Record<string, unknown>);
   const pick = (keys: string[], own: boolean) => JSON.stringify(Object.fromEntries(fields.filter(([key]) => keys.includes(key) !== own)));
@@ -209,7 +210,7 @@ async function callModel(role: Role, input: unknown, model: LanguageModel, abort
       abortSignal,
       maxOutputTokens, // with no limit the provider reserves the model's maximum, and a small credit balance refuses the call
     });
-    return check(role, result.output);
+    return check(role, role === 'trend_scout' ? { trends: (result.output as { trends?: unknown } | null)?.trends } : result.output);
   } catch (error) {
     // A provider can put an address with a key id in its error text. No address goes into the event log.
     const detail = (error instanceof Error ? error.message : String(error)).replace(/https?:\/\/[^\s)]+/g, '[address removed]');
