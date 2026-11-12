@@ -6,7 +6,7 @@
 import { duration, headerOf, manilaTime, shownStatus, timelineOf, type EventView, type RunView, type TaskView } from './view.ts';
 
 type RunList = { owner: string; demo?: boolean; sampleGoal: string; runs: RunView[] };
-type RunDetail = { run: RunView; tasks: TaskView[]; events: EventView[] };
+type RunDetail = { run: RunView; tasks: TaskView[]; events: EventView[]; recovery?: { kind: string; text: string }[] };
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -165,6 +165,8 @@ function drawSlate() {
         ),
       ),
     ),
+    // The recovery summary: what went wrong and what the conductor did, in order. A run with no failure has none.
+    ...(detail.recovery?.length ? [h('section', { class: 'recovery' }, h('h2', {}, 'What the conductor did'), h('ol', {}, ...detail.recovery.map((line) => h('li', { class: `recovery-${line.kind}` }, line.text))))] : []),
   );
 }
 

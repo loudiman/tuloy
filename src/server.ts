@@ -8,7 +8,7 @@ import { createPeerServer } from './peer-server.ts';
 import { SAMPLE_GOAL } from './planner.ts';
 import { skills, type Skill } from './schemas.ts';
 import type { Store } from './store.ts';
-import { taskViews } from './task-view.ts';
+import { recoverySummary, taskViews } from './task-view.ts';
 
 /** The injection kinds that are built. The other kinds of the shared contract answer 400 until their ticket builds them. */
 const injectionKinds = ['timeout', 'invalid_output', 'reviewer_rejection', 'primary_outage', 'all_models_outage', 'peer_silent', 'peer_refuses'];
@@ -84,7 +84,7 @@ export function createServer({
     if (req.method === 'GET' && runId) {
       const run = store.run(runId);
       const events = store.events(runId);
-      return run ? json(200, { run, tasks: taskViews(store.tasks(runId), events), events }) : json(404, { error: 'no such run' });
+      return run ? json(200, { run, tasks: taskViews(store.tasks(runId), events), events, recovery: recoverySummary(events) }) : json(404, { error: 'no such run' });
     }
     // Injection exists only in demo mode. `task` is an agent role; the default is the script task.
     if (demo && req.method === 'GET' && path === '/api/injections') return json(200, { demo: true, injections: store.injections() });

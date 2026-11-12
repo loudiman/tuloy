@@ -57,3 +57,53 @@ function stuckReason(task: Task, events: TuloyEvent[]): string | null {
         : ` Retry ${retry!.retry} of ${retry!.of} ${task.status === 'recovering' ? 'is running' : `in ${retry!.waitMs / 1000}s`}.`;
   return `${agentName[task.role]} task ${whatFailed[failure.result](failure)}.${did}`;
 }
+
+export type RecoveryLine = { kind: 'trouble' | 'recovery' | 'ok' | 'end'; text: string };
+
+/**
+ * The recovery summary of a run: what went wrong and what the conductor did about it, as plain sentences in the order of the events.
+ * It is made from the events only. A run with no failure has no line.
+ */
+export function recoverySummary(events: TuloyEvent[]): RecoveryLine[] {
+  const lines: RecoveryLine[] = [];
+  const say = (kind: RecoveryLine['kind'], text: string) => void lines.push({ kind, text });
+  // For each task: the name of its role, who has it now, and if a failure waits for a good output.
+  const role = new Map<string, string>();
+  const holder = new Map<string, string>();
+  const open = new Set<string>();
+  let rejected = false;
+  let stopped = '';
+  for (const e of events) {
+    const id = e.taskId ?? '';
+    const data = (e.data ?? {}) as { peer?: string; retry?: number; of?: number; reviews?: { script_id: string; verdict: string }[] };
+    const name = role.get(id) ?? id;
+    const who = holder.get(id) ?? `The ${name} agent`;
+    if (e.action === 'assign') {
+      if (data.peer) holder.set(id, e.result);
+      else role.set(id, e.result.replaceAll('_', ' '));
+    } else if (e.action === 'restart') say('recovery', 'Tuloy started again, and the conductor continued the run.');
+    else if (e.action === 'injection') say('trouble', `Demo: the presenter injected a failure of the ${name} agent (${e.result.replaceAll('_', ' ')}).`);
+    else if (e.action === 'review' && e.result === 'rejected') {
+      rejected = true;
+      open.add(id);
+      say('trouble', `The reviewer rejected ${data.reviews?.filter((r) => r.verdict === 'reject').map((r) => r.script_id).join(', ') || 'a script'}.`);
+    } else if (e.action === 'review' && e.result === 'pass') {
+      if (rejected) say('ok', 'The reviewer passed every script.');
+    } else if (['watch', 'validate', 'model_call', 'peer_call'].includes(e.action) && e.result in whatFailed) {
+      open.add(id);
+      say('trouble', who === 'The backup model' ? 'The backup model failed also.' : `${who} ${whatFailed[e.result](e)}.`);
+    } else if (e.action === 'retry') say('recovery', `The conductor started the ${name} agent again (retry ${data.retry} of ${data.of}).`);
+    else if (e.action === 'reroute') {
+      holder.set(id, data.peer ? e.result : 'The backup model');
+      say('recovery', `The conductor re-routed the ${name} task to ${data.peer ? e.result : 'the backup model'}.`);
+    } else if (e.action === 'goal_to_peer') {
+      open.add('goal'); // the one task of the new task graph version
+      say('recovery', `The conductor gave the full goal to ${e.result}.`);
+    }
+    else if (e.action === 'validate' && e.result === 'valid' && open.delete(id)) say('ok', `${who} finished the ${name} task.`);
+    else if (e.action === 'escalate') stopped = `: ${e.cause}`;
+    else if (e.action === 'end' && e.result === 'escalated') say('end', `The run ended as escalated${stopped}.`);
+    else if (e.action === 'end' && lines.length) say('end', 'The run ended as done.');
+  }
+  return lines;
+}

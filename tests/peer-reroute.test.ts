@@ -6,7 +6,7 @@ import { expect, test } from 'vitest';
 import type { A2aAnswer } from '../src/peer-client.ts';
 import { SAMPLE_GOAL } from '../src/planner.ts';
 import { createServer } from '../src/server.ts';
-import { taskViews } from '../src/task-view.ts';
+import { recoverySummary, taskViews } from '../src/task-view.ts';
 import { goodOutput } from './harness/scripted-model.ts';
 import { testTuloy } from './harness/tuloy.ts';
 
@@ -370,6 +370,19 @@ test("a script from a peer that the reviewer rejects goes to that peer's script 
   expect(inputs[1].reviewer_hints).toEqual([hints]);
   // The scheduler of the owner made the schedule.
   expect(tuloy.model.calls.map((c) => c.role)).toContain('scheduler');
+  // The recovery summary tells this in plain sentences, in order.
+  expect(recoverySummary(store.events(runId))).toEqual([
+    { kind: 'trouble', text: 'The script agent failed: the model is not available (503 model down).' },
+    { kind: 'recovery', text: 'The conductor re-routed the script task to the backup model.' },
+    { kind: 'trouble', text: 'The backup model failed also.' },
+    { kind: 'recovery', text: "The conductor re-routed the script task to Ana's script agent." },
+    { kind: 'ok', text: "Ana's script agent finished the script task." },
+    { kind: 'trouble', text: 'The reviewer rejected s1.' },
+    { kind: 'recovery', text: "The conductor re-routed the script task to Ana's script agent." },
+    { kind: 'ok', text: "Ana's script agent finished the script task." },
+    { kind: 'ok', text: 'The reviewer passed every script.' },
+    { kind: 'end', text: 'The run ended as done.' },
+  ]);
 });
 
 test.each<[string, A2aAnswer]>([

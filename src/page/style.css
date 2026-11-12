@@ -343,3 +343,7 @@ details > .data, details > .data-list { margin-top: 0.4rem; padding: 0.6rem 0.8r
 .peer-forms input { width: 100%; }
 #link, #paste { font: 500 0.8rem var(--mono); letter-spacing: -0.02em; }
 .note { display: block; margin-top: 0.6rem; font-size: 0.9rem; color: var(--soft); }
+
+/* ---- the recovery summary (plain for now: the page design comes later) ---- */
+.recovery { padding: 1rem 0 1.4rem; }
+.recovery ol { margin: 0.4rem 0 0; padding-left: 1.6rem; line-height: 1.5; }
