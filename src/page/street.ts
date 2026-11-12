@@ -14,6 +14,8 @@ const SX = [3.5, 9.5, 15.5, 21.5];
 const CROSS = [0.2, 6.5, 12.5, 18.5, 24.8];
 const OWN = 1;
 const PEER = 7.8;
+/** The jeepney stops a little before a shed, so that it does not hide the robots. */
+const PARK = 2.7;
 const HOME = { x: 10.1, y: 15.4, z: 27.4 };
 const CENTRE = { x: 12.5, y: 0, z: 4 };
 
@@ -248,7 +250,7 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
   const cargo = panel(2.8, 0.7, 'panel', 'ink');
   const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: cargo.texture, depthTest: false }));
   tag.scale.set(2.8, 0.7, 1);
-  tag.position.set(0, 3.3, 0);
+  tag.position.set(0, 2.9, 0);
   tag.renderOrder = 6;
   jeep.add(tag);
 
@@ -335,7 +337,7 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
     if (s.kind === 'work' && s.role === 'goal') await goTo(CROSS[0]!, PEER, g);
     else if (s.kind === 'work' && i >= 0) {
       sign(i, side, '');
-      await goTo(SX[i]!, side === 'own' ? OWN : PEER, g);
+      await goTo(SX[i]! - PARK, side === 'own' ? OWN : PEER, g);
       if (still(g)) setBot(id, 'working');
       await pause(700);
     } else if (s.kind === 'done' && i >= 0) {
@@ -370,7 +372,7 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
       await goTo(CROSS[0]!, PEER, g);
     } else if (s.kind === 'peer_progress' && i >= 0) {
       // What the peer's Tuloy says about its own agents. For the full goal the jeepney goes along the peer's route.
-      if (s.lane === 'peer_goal') await goTo(SX[i]!, PEER, g);
+      if (s.lane === 'peer_goal') await goTo(SX[i]! - PARK, PEER, g);
       if (still(g) && s.state) setBot(`${i}-peer`, s.state);
       if (s.state === 'working') await pause(500);
     } else if (s.kind === 'end') {

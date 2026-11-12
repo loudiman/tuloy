@@ -424,3 +424,10 @@ body > .shed-menu, .shed-menu { position: absolute; }
 .details > summary { cursor: pointer; font-size: 1.2rem; }
 .details[open] > summary { margin-bottom: 1rem; }
 @media (max-width: 900px) { .after { grid-template-columns: minmax(0, 1fr); } .street-hint { margin-left: 0; } }
+
+/* The run header is light now: its links and status words use ink, not the colours for a dark slate. */
+.slate a, .slate .field-stuck.is-stuck dd a { color: var(--stop); }
+.slate .reason { color: var(--ink); }
+.slate .slate-state .status, .slate .slate-state .status .glyph { color: var(--ink); border-color: var(--ink); opacity: 1; }
+.slate .slate-state .status-done, .slate .slate-state .status-done .glyph { color: var(--peer); border-color: var(--peer); }
+.slate .slate-state .status-escalated, .slate .slate-state .status-escalated .glyph { color: var(--stop); border-color: var(--stop); }
