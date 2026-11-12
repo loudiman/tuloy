@@ -62,7 +62,8 @@ export function createServer({
   /** The setting TULOY_DASHBOARD_PASSWORD. With it, the page and its API ask the browser for this password (any user name). */
   password?: string;
 }) {
-  const peerServer = createPeerServer({ store, conductor, owner, peerTasksPerHour, allowLocal: peerAllowLocal });
+  // A hosted Tuloy is behind the provider's https. Peers must get that address, not the address inside the server.
+  const peerServer = createPeerServer({ store, conductor, owner, peerTasksPerHour, allowLocal: peerAllowLocal, publicAddress: publicHost && `https://${publicHost}` });
   return http.createServer(async (req, res) => {
     const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
     const path = new URL(req.url ?? '/', 'http://tuloy').pathname;
