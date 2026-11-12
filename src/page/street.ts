@@ -38,6 +38,8 @@ export type StreetOptions = {
   say(text: string, tone: string): void;
   /** The presenter selected a shed of the owner's route (demo mode). `x` and `y` are in the page. */
   onShed(role: string, x: number, y: number): void;
+  /** The parts of the view that panels cover, in pixels from each side. */
+  inset?(): { top: number; right: number; bottom: number; left: number };
 };
 
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(`--st-${name}`).trim();
@@ -407,8 +409,11 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
   function fit() {
     const { clientWidth: w, clientHeight: h } = view;
     if (!w || !h) return;
+    // The panels cover a part of the view. The street gets the size that fits the free part, and its centre goes to the centre of that part.
+    const m = options.inset?.() ?? { top: 0, right: 0, bottom: 0, left: 0 };
     camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+    camera.zoom = Math.min(1, Math.min((w - m.left - m.right) / 2.4, h - m.top - m.bottom) / h);
+    camera.setViewOffset(w, h, (m.right - m.left) / 2, (m.bottom - m.top) / 2, w, h);
     renderer.setSize(w, h, false);
   }
   new ResizeObserver(fit).observe(view);

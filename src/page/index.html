@@ -12,6 +12,8 @@
 <script type="module" src="/page/app.ts"></script>
 </head>
 <body>
+<!-- The stage: the street fills the window. The other parts lie on top of it. -->
+<div class="stage">
 <header class="bar">
   <p class="mark">Tuloy <span id="owner" class="owner"></span> <span id="demo-tag" class="tag tag-demo" hidden>Demo mode</span></p>
   <label class="pick">Run <select id="run-pick"></select></label>
@@ -32,34 +34,40 @@
   <p id="start-note" class="start-note" role="status"></p>
 </section>
 
-<main>
-  <section id="slate" class="slate" aria-live="polite">
-    <p class="slate-note">Reading the runs…</p>
-  </section>
+  <div id="street" class="street"></div>
 
-  <section class="street-card" aria-label="The run as a trip">
-    <p id="street-say" class="street-say" role="status"></p>
-    <div id="street" class="street"></div>
-    <p id="street-off" class="street-off" hidden>This browser cannot draw the 3D street. The list and the result below show the run.</p>
-    <div class="street-tools">
-      <button id="replay" type="button">Replay the trip</button>
-      <label><input id="follow" type="checkbox"> Follow the jeepney</label>
-      <button id="view-reset" type="button">Reset the view</button>
-      <span class="street-hint">Drag to turn. Hold ⌘ or Ctrl and scroll to zoom.<span id="street-demo-hint" hidden> Click a shed on your route to block that agent.</span></span>
+  <div class="stage-mid">
+    <div class="caption">
+      <p id="street-off" class="street-off" hidden>This browser cannot draw the 3D street. The list and the result show the run.</p>
+      <p id="demo-note" class="demo-note" role="status"></p>
+      <ul id="demo-pending" class="demo-pending"></ul>
+      <button id="demo-clear" type="button" hidden>Clear the waiting injections</button>
+      <p id="street-say" class="street-say" role="status"></p>
     </div>
-    <p id="demo-note" class="demo-note" role="status"></p>
-    <ul id="demo-pending" class="demo-pending"></ul>
-    <button id="demo-clear" type="button" hidden>Clear the waiting injections</button>
-  </section>
-
-  <div class="after">
-    <section class="did" aria-labelledby="did-title">
-      <h2 id="did-title">What the conductor did</h2>
-      <ol id="did"></ol>
-    </section>
-    <section id="result" class="result" aria-labelledby="result-title"></section>
+    <div class="side">
+      <section id="slate" class="slate" aria-live="polite">
+        <p class="slate-note">Reading the runs…</p>
+      </section>
+      <section class="did" aria-labelledby="did-title">
+        <h2 id="did-title">What the conductor did</h2>
+        <ol id="did"></ol>
+      </section>
+      <details id="result-fold" class="result-fold">
+        <summary>Result</summary>
+        <section id="result" class="result" aria-labelledby="result-title"></section>
+      </details>
+    </div>
   </div>
 
+  <div class="street-tools">
+    <button id="replay" type="button">Replay the trip</button>
+    <label><input id="follow" type="checkbox"> Follow the jeepney</label>
+    <button id="view-reset" type="button">Reset the view</button>
+    <span class="street-hint">Drag to turn. Hold ⌘ or Ctrl and scroll to zoom.<span id="street-demo-hint" hidden> Click a shed on your route to block that agent.</span></span>
+  </div>
+</div>
+
+<main>
   <details class="details">
     <summary>Details: tasks, event trail, past runs</summary>
     <div class="desk">

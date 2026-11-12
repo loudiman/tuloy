@@ -27,3 +27,4 @@ the rest is real. The run ended as done in 56 seconds. The pictures are from hea
 - `3d-2-reroute-to-peer.png`: Sam's script agent wrote the scripts.
 - `3d-3-rejected-second-attempt.png`: Lou's reviewer rejected the scripts; the task is with Sam's script agent again, with the hints.
 - `3d-4-done.png`: the reviewer passed the scripts, the scheduler made the schedule, the run ended as done.
+- `3d-5-full-window.png`, `3d-6-full-window-dark.png`: the same run after the layout change: the street fills the window and the panels lie on top of it (light theme and dark theme, window 1440 by 860).
