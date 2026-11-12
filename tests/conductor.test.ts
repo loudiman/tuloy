@@ -199,3 +199,11 @@ test('the script agent is told how many scripts to write when the goal gives no 
   expect(system).toContain('If the goal gives no number of scripts, write 2 scripts.');
   expect(system).toContain('Keep each body short enough to shoot in the duration that the goal gives, or in 60 seconds if it gives none.');
 });
+
+test('the scheduler is told the date of today in Manila, so the schedule is not in a past year', async () => {
+  const { conductor, model } = testTuloy();
+
+  await conductor.startRun(SAMPLE_GOAL).ended;
+
+  expect(model.calls.find((c) => c.role === 'scheduler')!.system).toContain('Today is Thursday, November 12, 2026 in Manila. Each time is after today.');
+});
