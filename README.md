@@ -30,7 +30,8 @@ By default the trend scout proposes trends from the knowledge of the model. With
 
 - The result shows where the trends came from: "from a web search, N sources" with a link to each page, or "from the model's knowledge, no search".
 - Tuloy writes the list of pages from what the search returned. Sources that a model writes by itself are dropped.
-- When the call with the search fails, the trend scout answers one more time with no search, and the result says so. A search that is down does not stop a run.
+- The trend scout then works in two steps, so it makes two model calls: it searches the web and writes notes, then it makes the checked list of trends from the notes. A model that searches answers in plain text, so one call cannot do the two things.
+- When the search step fails or finds no page, the trend scout answers from the knowledge of the model, and the result says why. A search that is down does not stop a run.
 - Each search returns 5 results at most. Tuloy sends OpenRouter's limits with the tool: 3 searches for one call (`max_uses`) and 15 results in all. The instruction says the same. With a model's own search, OpenRouter passes `max_uses` on to Anthropic only, so for other models the instruction and the time limit of the task are the limits.
 - Text from a web page is data for the model, not instructions.
 

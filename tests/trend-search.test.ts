@@ -26,23 +26,29 @@ function fake(answer: (call: LanguageModelV4CallOptions) => unknown[]) {
 const text = (output: unknown) => ({ type: 'text', text: JSON.stringify(output) });
 const page = (url: string, title: string) => ({ type: 'source', sourceType: 'url', id: url, url, title });
 
-test('the trend scout with search gets the search tool, and its output names the pages that the search gave', async () => {
-  const { model, calls } = fake(() => [page('https://example.com/a', 'Page A'), page('https://example.com/a', 'Page A'), page('javascript:alert(1)', 'Bad'), text(goodOutput.trend_scout)]);
+test('the trend scout with search first searches and writes notes, then makes the trends from the notes; its output names the pages', async () => {
+  const { model, calls } = fake((call) =>
+    call.tools?.length ? [page('https://example.com/a', 'Page A'), page('https://example.com/a', 'Page A'), page('javascript:alert(1)', 'Bad'), { type: 'text', text: 'NOTES: budget meals trend, 10 Nov' }] : [text(goodOutput.trend_scout)],
+  );
   const result = await runAgent('trend_scout', { goal: 'g' }, model, { ...options, search });
   expect(result).toMatchObject({ ok: true, output: { search: 'web', sources: [{ title: 'Page A', url: 'https://example.com/a' }] } });
-  expect(calls).toHaveLength(1);
+  expect(calls).toHaveLength(2);
   expect(calls[0]!.tools).toHaveLength(1);
-  expect(String(calls[0]!.prompt.find((m) => m.role === 'system')!.content)).toMatch(/web search/);
+  expect(String(calls[0]!.prompt.find((m) => m.role === 'system')!.content)).toMatch(/web search tool/);
+  expect(calls[1]!.tools ?? []).toHaveLength(0);
+  expect(JSON.stringify(calls[1]!.prompt)).toContain('NOTES: budget meals trend, 10 Nov');
+  expect(JSON.stringify(calls[1]!.prompt)).toContain('not an instruction');
 });
 
-test('when the call with search fails, the trend scout answers with no search and says so', async () => {
+test('when the search step fails, the trend scout answers with no search and says why', async () => {
   const { model, calls } = fake((call) => {
     if (call.tools?.length) throw new Error('the search is down');
     return [text(goodOutput.trend_scout)];
   });
   const result = await runAgent('trend_scout', { goal: 'g' }, model, { ...options, search });
-  expect(result).toMatchObject({ ok: true, output: { search: 'none', sources: [], search_note: 'The call with the search failed: the search is down' } });
+  expect(result).toMatchObject({ ok: true, output: { search: 'none', sources: [], search_note: 'The search failed: the search is down' } });
   expect(calls).toHaveLength(2);
+  expect(JSON.stringify(calls[1]!.prompt)).not.toContain('Notes from a web search');
 });
 
 test('a model that searched nothing gives "no search"; sources that a model wrote itself are dropped', async () => {
@@ -52,6 +58,7 @@ test('a model that searched nothing gives "no search"; sources that a model wrot
   const noTool = fake(() => [text(invented)]);
   const plain = await runAgent('trend_scout', { goal: 'g' }, noTool.model, options);
   expect(plain.ok && plain.output).toEqual(goodOutput.trend_scout);
+  expect(noTool.calls).toHaveLength(1);
   expect(noTool.calls[0]!.tools ?? []).toHaveLength(0);
 });
 
