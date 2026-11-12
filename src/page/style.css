@@ -506,3 +506,9 @@ body > .shed-menu, .shed-menu { position: absolute; }
   .result-fold[open] { flex: 1 1 0; min-height: 6rem; }
   main { padding-top: 1.4rem; }
 }
+
+/* ---- the trends and the pages of the web search ---- */
+.trends { background: var(--sheet); border: 1.5px solid var(--ink); border-radius: 5px; padding: 0.8rem 1.1rem; display: grid; gap: 0.6rem; }
+.trends ul { display: grid; gap: 0.35rem; }
+.trends .sources { list-style: decimal; padding-left: 1.4rem; font-size: 0.9rem; border-top: 1px solid var(--rule); padding-top: 0.5rem; }
+.trends .sources a { color: var(--live); overflow-wrap: anywhere; }

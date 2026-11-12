@@ -1,4 +1,4 @@
-import type { LanguageModel } from 'ai';
+import type { LanguageModel, ToolSet } from 'ai';
 import type { z } from 'zod';
 import { runAgent, type AgentResult, type Outside } from './agent-runner.ts';
 import type { Clock } from './clock.ts';
@@ -26,7 +26,7 @@ export function createConductor({
   demo = false,
 }: {
   store: Store;
-  models: { primary: LanguageModel; backup: LanguageModel };
+  models: { primary: LanguageModel; backup: LanguageModel; search?: ToolSet[string] };
   clock: Clock;
   limits: Limits;
   /** Sends a task to a peer (step 3 of the recovery order). The default refuses private and same-machine addresses. */
@@ -239,7 +239,7 @@ export function createConductor({
               // The run can end while the agent waits in line (a cancel): then no model call starts.
               store.run(runId)?.status !== 'running'
                 ? { ok: false as const, failure: { kind: 'timeout' as const, detail: 'the run ended' } }
-                : runAgent(task.role as Role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, outside, onHeartbeat: heartbeat('the agent waits for the model') }),
+                : runAgent(task.role as Role, input, models[model === 'backup' ? 'backup' : 'primary'], { clock, limits, injected, outside, search: models.search, onHeartbeat: heartbeat('the agent waits for the model') }),
             );
       stopped = null;
       // The run ended while the agent worked (a cancel): its answer is dropped, and nothing more is written or started.

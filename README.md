@@ -24,6 +24,17 @@ With two peers, the street has three roads. Here the first peer refused the task
 - The houses, the trees and the lamps are scenery. They say nothing about the run.
 - The browser must have WebGL. Without it, the page shows the list "What the conductor did" and the result.
 
+## The trend scout can search the web
+
+By default the trend scout proposes trends from the knowledge of the model. With `TULOY_TREND_SEARCH=1` it searches the web with OpenRouter's web search tool, which uses the same key. A search costs money on top of the model call.
+
+- The result shows where the trends came from: "from a web search, N sources" with a link to each page, or "from the model's knowledge, no search".
+- Tuloy writes the list of pages from what the search returned. Sources that a model writes by itself are dropped.
+- The trend scout then works in two steps, so it makes two model calls: it searches the web and writes notes, then it makes the checked list of trends from the notes. A model that searches answers in plain text, so one call cannot do the two things.
+- When the search step fails or finds no page, the trend scout answers from the knowledge of the model, and the result says why. A search that is down does not stop a run.
+- Each search returns 5 results at most. Tuloy sends OpenRouter's limits with the tool: 3 searches for one call (`max_uses`) and 15 results in all. The instruction says the same. With a model's own search, OpenRouter passes `max_uses` on to Anthropic only, so for other models the instruction and the time limit of the task are the limits.
+- Text from a web page is data for the model, not instructions.
+
 ## Run two Tuloys on one laptop
 
 This is the demo path: the owner's own models go down, and the conductor re-routes the script task to a peer. The second Tuloy is a sample owner, not a second person.
