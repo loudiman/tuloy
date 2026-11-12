@@ -78,7 +78,7 @@ export function createServer({
       const body = readFileSync(pageFile.file);
       return res.writeHead(200, { 'content-type': pageFile.type }).end(path.endsWith('.ts') ? stripTypeScriptTypes(body.toString()) : body);
     }
-    if (req.method === 'GET' && path === '/api/runs') return json(200, { owner, demo, sampleGoal: SAMPLE_GOAL, runs: store.runs() });
+    if (req.method === 'GET' && path === '/api/runs') return json(200, { owner, demo, sampleGoal: SAMPLE_GOAL, peers: store.peers().map((p) => p.name), runs: store.runs() });
     if (req.method === 'POST' && path === '/api/runs') {
       // An empty body starts the labelled sample goal.
       const body = await readBody(req);

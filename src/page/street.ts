@@ -1,5 +1,5 @@
 /**
- * The street: a run as a jeepney trip, in 3D. The owner's route is the far road and the peer's route is the near road.
+ * The street: a run as a jeepney trip, in 3D. The owner's route is the far road. Each peer on the allowed list has its own road, nearer to the viewer.
  * Each agent is a robot at a waiting shed. The jeepney carries the work from stop to stop, and each step of the trip is one move.
  * It shows only what the trip of the run says. All text goes on a canvas as text, never as HTML.
  */
@@ -14,19 +14,20 @@ const SX = [3.5, 9.5, 15.5, 21.5];
 const CROSS = [0.2, 6.5, 12.5, 18.5, 24.8];
 const OWN = 1;
 const PEER = 7.8;
+/** From one road to the next. */
+const GAP = PEER - OWN;
 /** The jeepney stops a little before a shed, so that it does not hide the robots. */
 const PARK = 2.7;
 const HOME = { x: 10.1, y: 15.4, z: 27.4 };
 const CENTRE = { x: 12.5, y: 0, z: 4 };
 
-type Side = 'own' | 'peer';
 type BotState = 'idle' | 'working' | 'done' | 'blocked';
 type Bot = { group: THREE.Group; parts: THREE.MeshLambertMaterial[]; tip: THREE.MeshLambertMaterial; badge: THREE.Sprite; done: THREE.Texture; blocked: THREE.Texture; state: BotState };
 type Panel = { texture: THREE.CanvasTexture; set(text: string): void; width: number; height: number };
 
 export type Street = {
   /** Shows the trip of a run. A new `key` (a different run) shows its state now; more steps of the same run are played one by one. */
-  show(key: string, trip: Trip, names: { owner: string }): void;
+  show(key: string, trip: Trip, names: { owner: string; peers?: string[] }): void;
   /** Plays the trip of the run from its start. */
   replay(): void;
   follow(on: boolean): void;
@@ -64,7 +65,7 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
     if (!event.ctrlKey && !event.metaKey) event.stopImmediatePropagation();
   });
   const controls = new OrbitControls(camera, renderer.domElement);
-  Object.assign(controls, { enableDamping: true, maxPolarAngle: 1.45, minDistance: 10, maxDistance: 70 });
+  Object.assign(controls, { enableDamping: true, maxPolarAngle: 1.45, minDistance: 10, maxDistance: 130 });
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 2.3));
   const sun = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -187,10 +188,11 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
 
   const signs = new Map<string, { group: THREE.Group; set(text: string): void }>();
   const hits: THREE.Mesh[] = [];
-  function shed(i: number, side: Side) {
+  /** A shed of the owner's route (`n` is -1) or of the road of peer `n`. */
+  function shed(i: number, n: number) {
     const sx = SX[i]!;
-    const own = side === 'own';
-    const y0 = own ? -2 : 4.9;
+    const own = n < 0;
+    const y0 = own ? -2 : 4.9 + n * GAP;
     for (const [x, y] of [[-1.6, 0], [1.5, 0], [-1.6, 1.5], [1.5, 1.5]] as const) box(scene, sx + x, y0 + y, 0, 0.1, 0.1, 2.3, 'ink');
     box(scene, sx - 1.8, y0 - 0.1, 2.3, 3.6, 1.8, 0.18, own ? 'route' : 'peer');
     box(scene, sx - 1.8, y0 + 1.62, 2.48, 3.6, 0.1, 0.7, 'white');
@@ -206,7 +208,7 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
       hit.userData.role = ROLES[i];
       scene.add(hit);
       hits.push(hit);
-    } else bot(`${i}-peer`, sx, y0 + 0.9, 'peer');
+    } else bot(`${i}-peer${n}`, sx, y0 + 0.9, 'peer');
     const group = new THREE.Group();
     group.visible = false;
     scene.add(group);
@@ -214,23 +216,49 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
     box(group, sx - 3, y0 + 1.6, 3.95, 6, 0.12, 1, 'sign');
     const text = panel(6, 1, 'sign', 'on-sign');
     board(group, sx, y0 + 1.73, 4.45, text);
-    signs.set(`${i}-${side}`, { group, set: text.set });
+    signs.set(`${i}-${own ? 'own' : `peer${n}`}`, { group, set: text.set });
   }
 
   box(scene, -1, -2.6, -0.4, 27, 11.8, 0.4, 'ground');
   const road = (x0: number, y0: number, x1: number, y1: number) => (box(scene, x0, y0, 0, x1 - x0, y1 - y0, 0.02, 'road').castShadow = false);
   road(-0.6, 0, 25.6, 2);
-  road(-0.6, 6.8, 25.6, 8.8);
-  for (const c of CROSS) road(c - 0.8, 2, c + 0.8, 6.8);
-  for (let x = -0.3; x < 25.2; x += 1.3) for (const y of [OWN, PEER]) box(scene, x, y - 0.04, 0.02, 0.6, 0.08, 0.01, 'roadline').castShadow = false;
-  const routeNames = [1.5, 8.3].map((y) => {
+  const roadLine = (y: number) => {
+    for (let x = -0.3; x < 25.2; x += 1.3) box(scene, x, y - 0.04, 0.02, 0.6, 0.08, 0.01, 'roadline').castShadow = false;
+  };
+  const routeName = (y: number) => {
     const p = panel(4.6, 0.6, 'road', 'roadline', false);
     board(scene, 23, y, 0.04, p).rotation.x = -Math.PI / 2;
     return p;
-  });
+  };
+  roadLine(OWN);
+  const ownName = routeName(1.5);
+  // One road for each peer. The first road is there from the start; it gets the name of the first peer.
+  const roads: { name: string | null; label: Panel }[] = [];
+  function addRoad(name: string | null) {
+    const n = roads.length;
+    const dy = n * GAP;
+    if (n) box(scene, -1, 9.2 + dy - GAP, -0.4, 27, GAP, 0.4, 'ground');
+    road(-0.6, 6.8 + dy, 25.6, 8.8 + dy);
+    for (const c of CROSS) road(c - 0.8, 2 + dy, c + 0.8, 6.8 + dy);
+    roadLine(PEER + dy);
+    const label = routeName(8.3 + dy);
+    label.set(name ? `${name}'s route` : "A peer's route");
+    for (const i of [0, 1, 2, 3]) shed(i, n);
+    roads.push({ name, label });
+    home();
+    return n;
+  }
+  /** The road of the peer with this name. A peer with no road yet gets one. */
+  function roadOf(name: string) {
+    const n = roads.findIndex((r) => r.name === name);
+    if (n >= 0) return n;
+    if (roads[0]!.name !== null) return addRoad(name);
+    roads[0]!.name = name;
+    roads[0]!.label.set(`${name}'s route`);
+    return 0;
+  }
   const barriers = [0, 1, 2, 3].map((i) => {
-    shed(i, 'own');
-    shed(i, 'peer');
+    shed(i, -1);
     const group = new THREE.Group();
     group.visible = false;
     scene.add(group);
@@ -268,7 +296,7 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
   let steps: TripStep[] = [];
   let played = 0;
   let playing = false;
-  let peer = 'Peer';
+  let cur = 0; // the road of the peer that has the work now
   let lastBlocked = 1;
   let following = false;
   const trails: THREE.Mesh[] = [];
@@ -287,6 +315,7 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
     played = 0;
     playing = false;
     lastBlocked = 1;
+    cur = 0;
   }
   const still = (g: number) => g === generation;
   const pause = (ms: number) => (fast || reduced ? Promise.resolve() : sleep(ms));
@@ -326,8 +355,8 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
     await leg(x, y, g);
     if (still(g) && y === OWN) jeep.rotation.y = 0;
   }
-  function sign(i: number, side: Side, text: string) {
-    const s = signs.get(`${i}-${side}`);
+  function sign(i: number, where: string, text: string) {
+    const s = signs.get(`${i}-${where}`);
     if (!s) return;
     s.group.visible = !!text;
     if (text) s.set(text);
@@ -336,14 +365,16 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
   /** One step of the trip as one move of the street. */
   async function act(s: TripStep, g: number) {
     options.say(s.text, s.tone);
-    if (s.peer && s.peer !== peer) routeNames[1]!.set(`${(peer = s.peer)}'s route`);
+    if (s.peer) cur = roadOf(s.peer);
+    const peer = roads[cur]!.name ?? 'Peer';
+    const py = PEER + cur * GAP;
     const i = s.role ? ROLES.indexOf(s.role) : -1;
-    const side: Side = s.lane === 'peer' || s.lane === 'peer_goal' ? 'peer' : 'own';
-    const id = `${i}-${s.lane === 'peer_goal' ? 'peer' : s.lane}`;
-    if (s.kind === 'work' && s.role === 'goal') await goTo(CROSS[0]!, PEER, g);
+    const side = s.lane === 'peer' || s.lane === 'peer_goal' ? `peer${cur}` : 'own';
+    const id = `${i}-${s.lane === 'backup' ? 'backup' : side}`;
+    if (s.kind === 'work' && s.role === 'goal') await goTo(CROSS[0]!, py, g);
     else if (s.kind === 'work' && i >= 0) {
       sign(i, side, '');
-      await goTo(SX[i]! - PARK, side === 'own' ? OWN : PEER, g);
+      await goTo(SX[i]! - PARK, side === 'own' ? OWN : py, g);
       if (still(g)) setBot(id, 'working');
       await pause(700);
     } else if (s.kind === 'done' && i >= 0) {
@@ -372,18 +403,18 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
       sign(lastBlocked, 'own', `Full goal → ${peer}`);
       barriers[lastBlocked]!.visible = true;
       for (const n of [0, 1, 2, 3]) {
-        setBot(`${n}-peer`, 'idle');
-        sign(n, 'peer', '');
+        setBot(`${n}-peer${cur}`, 'idle');
+        sign(n, `peer${cur}`, '');
       }
-      await goTo(CROSS[0]!, PEER, g);
+      await goTo(CROSS[0]!, py, g);
     } else if (s.kind === 'peer_progress' && i >= 0) {
       // What the peer's Tuloy says about its own agents. For the full goal the jeepney goes along the peer's route.
-      if (s.lane === 'peer_goal') await goTo(SX[i]! - PARK, PEER, g);
-      if (still(g) && s.state) setBot(`${i}-peer`, s.state);
+      if (s.lane === 'peer_goal') await goTo(SX[i]! - PARK, py, g);
+      if (still(g) && s.state) setBot(`${i}-peer${cur}`, s.state);
       if (s.state === 'working') await pause(500);
     } else if (s.kind === 'end') {
       const done = /as done/.test(s.text);
-      if (done) sign(3, at.y === PEER ? 'peer' : 'own', 'Done');
+      if (done) sign(3, at.y > 2 ? `peer${cur}` : 'own', 'Done');
       else sign(lastBlocked, 'own', 'Escalated');
     }
     if (still(g)) cargo.set(s.cargo);
@@ -401,11 +432,18 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
   }
 
   // ---- the view ----
+  /** The view that shows all roads. More roads make the street deeper, so the camera goes back. */
   function home() {
-    camera.position.set(HOME.x, HOME.y, HOME.z);
-    controls.target.set(CENTRE.x, CENTRE.y, CENTRE.z);
+    const deep = (roads.length - 1) * GAP;
+    const k = 1 + deep / 40;
+    controls.target.set(CENTRE.x, CENTRE.y, CENTRE.z + deep / 2);
+    camera.position.set(CENTRE.x + (HOME.x - CENTRE.x) * k, HOME.y * k, controls.target.z + (HOME.z - CENTRE.z) * k);
+    sun.position.set(4, 22, 14 + deep / 2);
+    sun.target.position.z = CENTRE.z + deep / 2;
+    Object.assign(sun.shadow.camera, { top: 16 + deep / 2, bottom: -16 - deep / 2, far: 60 + deep });
+    sun.shadow.camera.updateProjectionMatrix();
   }
-  home();
+  addRoad(null);
   function fit() {
     const { clientWidth: w, clientHeight: h } = view;
     if (!w || !h) return;
@@ -449,13 +487,13 @@ export function createStreet(view: HTMLElement, options: StreetOptions): Street 
   });
   renderer.domElement.addEventListener('pointermove', (event) => (renderer.domElement.style.cursor = view.dataset.demo && shedAt(event) ? 'pointer' : ''));
 
-  routeNames[0]!.set('Your route');
-  routeNames[1]!.set("A peer's route");
+  ownName.set('Your route');
   cargo.set('Goal');
 
   return {
     show(nextKey, trip, names) {
-      routeNames[0]!.set(`${names.owner}'s route`);
+      ownName.set(`${names.owner}'s route`);
+      for (const name of names.peers ?? []) roadOf(name);
       const same = nextKey === key && trip.steps.length >= played && trip.steps.slice(0, played).every((s, n) => s.seq === steps[n]?.seq && s.kind === steps[n]?.kind);
       steps = trip.steps;
       if (same) return void play();

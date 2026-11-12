@@ -7,7 +7,7 @@ import { createStreet } from './street.ts';
 import type { Trip } from '../trip-view.ts';
 import { duration, headerOf, manilaTime, shownStatus, timelineOf, type EventView, type RunView, type TaskView } from './view.ts';
 
-type RunList = { owner: string; demo?: boolean; sampleGoal: string; runs: RunView[] };
+type RunList = { owner: string; demo?: boolean; sampleGoal: string; peers?: string[]; runs: RunView[] };
 type RunDetail = { run: RunView; tasks: TaskView[]; events: EventView[]; recovery?: { kind: string; text: string }[]; trip?: Trip };
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -449,7 +449,7 @@ $('run-pick').addEventListener('change', () => (location.hash = link(Number(($('
 function drawStreet() {
   if (!detail?.trip || !list) return say(list && !list.runs.length ? 'Give a goal. The jeepney carries the work from agent to agent.' : '');
   if (!detail.trip.steps.length) say('The run starts.');
-  street?.show(String(detail.run.id), detail.trip, { owner: list.owner });
+  street?.show(String(detail.run.id), detail.trip, { owner: list.owner, peers: list.peers });
 }
 
 /** The recovery summary: what went wrong and what the conductor did, in order. */
