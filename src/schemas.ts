@@ -3,6 +3,8 @@ import { z } from 'zod';
 /** One input schema and one output schema per agent role. Extra fields are dropped; required fields must validate. */
 
 const trend = z.object({ topic: z.string().min(1), why: z.string().min(1) });
+/** A page that the web search of the trend scout gave. Tuloy writes these fields, not the model. */
+const source = z.object({ title: z.string().max(300), url: z.string().max(2000).regex(/^https?:\/\//) });
 
 const script = z.object({
   id: z.string().min(1),
@@ -39,7 +41,7 @@ const scripts = z.array(script).min(1);
 const reviews = z.array(review).min(1);
 
 export const roles = {
-  trend_scout: { input: z.object({ goal }), output: z.object({ trends }) },
+  trend_scout: { input: z.object({ goal }), output: z.object({ trends, search: z.enum(['web', 'none']).optional(), sources: z.array(source).max(15).optional() }) },
   script: { input: z.object({ goal, trends, reviewer_hints: reviewerHints.optional() }), output: z.object({ scripts }) },
   reviewer: { input: z.object({ goal, scripts }), output: z.object({ reviews }) },
   scheduler: {
